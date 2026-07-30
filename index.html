@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KZ AI</title>
+  <style>
+    :root { font-family: Inter, system-ui, Arial, sans-serif; color-scheme: dark; }
+    body { margin:0; background:#0b0f14; color:#f5f7fa; }
+    header { padding:22px; border-bottom:1px solid #222b36; display:flex; justify-content:space-between; align-items:center; }
+    h1 { margin:0; font-size:24px; }
+    main { max-width:980px; margin:auto; padding:20px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; }
+    .card { background:#131a22; border:1px solid #253140; border-radius:16px; padding:18px; }
+    .status { font-size:14px; color:#9fb0c3; }
+    .value { font-size:28px; font-weight:700; margin-top:6px; }
+    button { border:0; border-radius:12px; padding:13px 16px; font-weight:700; cursor:pointer; }
+    .primary { background:#6d5dfc; color:white; }
+    .secondary { background:#202a36; color:white; }
+    textarea { width:100%; box-sizing:border-box; margin-top:12px; min-height:110px; border-radius:12px; border:1px solid #314052; background:#0f151c; color:white; padding:12px; }
+    .actions { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+    .log { margin-top:14px; padding:12px; background:#0f151c; border-radius:12px; color:#b9c6d3; min-height:44px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>KZ AI</h1>
+    <span class="status">Prototype v0.1</span>
+  </header>
+  <main>
+    <div class="grid">
+      <section class="card"><div class="status">Meta</div><div class="value">Not connected</div></section>
+      <section class="card"><div class="status">Selmo</div><div class="value">Not connected</div></section>
+      <section class="card"><div class="status">CAPI</div><div class="value">Waiting</div></section>
+      <section class="card"><div class="status">Approval queue</div><div class="value">0</div></section>
+    </div>
+
+    <section class="card" style="margin-top:14px">
+      <h2>Ask KZ AI</h2>
+      <textarea id="request" placeholder="Example: Prepare tonight's livestream campaign."></textarea>
+      <div class="actions">
+        <button class="primary" onclick="plan()">Create plan</button>
+        <button class="secondary" onclick="approve()">Approve</button>
+        <button class="secondary" onclick="reject()">Reject</button>
+      </div>
+      <div class="log" id="log">Ready.</div>
+    </section>
+  </main>
+  <script>
+    function plan() {
+      const text = document.getElementById('request').value.trim();
+      document.getElementById('log').textContent =
+        text ? `Proposed action: ${text} — awaiting your approval.` : 'Write a request first.';
+    }
+    function approve() {
+      document.getElementById('log').textContent =
+        'Approved. Real account connections will be added in the next version.';
+    }
+    function reject() {
+      document.getElementById('log').textContent = 'Rejected. No action taken.';
+    }
+  </script>
+</body>
+</html>
