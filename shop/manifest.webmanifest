@@ -1,0 +1,41 @@
+{
+  "name": "KOMBI Sklep",
+  "short_name": "Sklep",
+  "description": "Sklep KOMBI — katalog, koszyk i zamówienie z dostawą DPD.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "lang": "pl",
+  "dir": "ltr",
+  "background_color": "#f4efe6",
+  "theme_color": "#141414",
+  "categories": ["shopping"],
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
