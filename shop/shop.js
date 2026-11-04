@@ -13,6 +13,7 @@ import {
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
+import { buyerLine, hasSavedBuyer } from './checkout.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
@@ -503,12 +504,7 @@ function checkoutMain() {
     </div>
     <p class="hint">To jest podgląd. Kwotę do zapłaty potwierdza sklep przy zamówieniu.</p>
     <form id="checkout" novalidate>
-      ${field('name', 'Imię i nazwisko', draft.name, 'text', err.name, 'autocomplete="name"')}
-      ${field('phone', 'Telefon', draft.phone, 'tel', err.phone, 'autocomplete="tel" inputmode="tel"')}
-      ${field('email', 'E-mail (nieobowiązkowy)', draft.email, 'email', err.email, 'autocomplete="email" inputmode="email"')}
-      ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
-      ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
-      ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}
+      ${buyerFields(draft, err)}
       <p class="group-label">Dostawa</p>
       ${choice('delivery', 'dpd_home', 'Kurier DPD pod drzwi', draft.delivery)}
       ${choice('delivery', 'dpd_point', 'Punkt lub automat DPD', draft.delivery)}
@@ -534,6 +530,25 @@ function checkoutMain() {
       <button type="submit" class="btn primary block" id="place">Zamawiam</button>
     </form>
   </main>`;
+}
+
+function buyerFields(draft, err) {
+  if (hasSavedBuyer(draft) && !state.editBuyer) {
+    const hidden = ['name', 'phone', 'email', 'street', 'postcode', 'city']
+      .map((key) => `<input type="hidden" name="${key}" value="${esc(draft[key] || '')}">`)
+      .join('');
+    return `<div class="note-box remembered">
+      <p>${esc(buyerLine(draft))}</p>
+      <button type="button" class="btn ghost" data-act="not-me">to nie ja</button>
+      ${hidden}
+    </div>`;
+  }
+  return `${field('name', 'Imię i nazwisko', draft.name, 'text', err.name, 'autocomplete="name"')}
+      ${field('phone', 'Telefon', draft.phone, 'tel', err.phone, 'autocomplete="tel" inputmode="tel"')}
+      ${field('email', 'E-mail (nieobowiązkowy)', draft.email, 'email', err.email, 'autocomplete="email" inputmode="email"')}
+      ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
+      ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
+      ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
 }
 
 function field(id, label, value, type, error, extra) {
@@ -1011,6 +1026,12 @@ function onClick(event) {
   if (act === 'reload') { loadProducts(); return; }
   if (act === 'kolekcja') {
     document.getElementById('kolekcja')?.scrollIntoView({ block: 'start' });
+    return;
+  }
+  if (act === 'not-me') {
+    state.editBuyer = true;
+    saveDraft(emptyDraft());
+    paint({ keep: true });
     return;
   }
   if (act === 'luck') {
