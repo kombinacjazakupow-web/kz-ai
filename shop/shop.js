@@ -4,6 +4,7 @@ import {
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   esc, formatZl, photoUrl, splitList, parseRoute, stockBadge, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
+  clampBasket,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode,
 } from './common.js';
 
@@ -137,6 +138,18 @@ function stockOf(product) {
   return Number.isFinite(n) ? n : null;
 }
 
+function heldQty(productId) {
+  return state.basket.reduce((sum, line) => (
+    String(line.product_id) === String(productId) ? sum + (Number(line.qty) || 0) : sum
+  ), 0);
+}
+
+function addRoom(product) {
+  const stock = stockOf(product);
+  if (stock == null) return 99;
+  return Math.max(0, Math.min(99, Math.floor(stock)) - heldQty(product?.id));
+}
+
 function toast(msg) {
   const el = document.getElementById('toast');
   if (!el) return;
@@ -260,10 +273,13 @@ function productMain(code) {
   const sold = badge === 'Wyprzedane';
   const sizes = splitList(product.sizes);
   const colors = splitList(product.colors);
-  const stock = stockOf(product);
-  const max = stock == null ? 99 : Math.max(0, Math.min(99, stock));
+  const left = addRoom(product);
+  if (left > 0 && state.pick.qty > left) state.pick.qty = left;
+  const max = Math.max(left, 1);
   const buy = sold
     ? '<p class="badge sold" style="position:static;display:inline-block">Wyprzedane</p>'
+    : left < 1
+    ? '<p>W koszyku jest już cały dostępny stan.</p>'
     : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${chips('color', 'Kolor', colors, state.pick.color)}
       <div class="stepper" aria-label="Ilość">
         <button type="button" data-act="pqty" data-dir="-1" aria-label="Mniej" ${state.pick.qty <= 1 ? 'disabled' : ''}>−</button>
@@ -615,8 +631,8 @@ function onClick(event) {
   }
   if (act === 'pqty') {
     const product = findProduct(state.pick.code);
-    const stock = stockOf(product);
-    const max = stock == null ? 99 : Math.max(1, Math.min(99, stock));
+    const max = addRoom(product);
+    if (max < 1) return;
     state.pick.qty = Math.min(max, Math.max(1, state.pick.qty + (Number(target.dataset.dir) || 0)));
     const label = document.getElementById('pqty');
     if (label) label.textContent = String(state.pick.qty);
@@ -719,6 +735,7 @@ async function loadProducts() {
     if (!hadCatalog) state.error = 'Nie udało się pobrać produktów.';
   } else {
     state.products = sortProducts(data || []).filter((item) => item.active !== false);
+    setBasket(clampBasket(state.basket, state.products));
     state.loaded = true;
     state.error = '';
   }

@@ -152,32 +152,72 @@ export function capFor(stock) {
   return Math.min(99, Math.max(0, Math.floor(stock)));
 }
 
+export function takenExcept(lines, productId, exceptKey) {
+  let used = 0;
+  const id = String(productId || '');
+  for (const line of lines || []) {
+    if (String(line?.product_id || '') !== id) continue;
+    if (exceptKey && lineKey(line) === exceptKey) continue;
+    used += Math.round(Number(line?.qty)) || 0;
+  }
+  return used;
+}
+
+export function roomFor(lines, productId, exceptKey, stock) {
+  const cap = capFor(stock);
+  if (!Number.isFinite(stock)) return cap;
+  return Math.max(0, cap - takenExcept(lines, productId, exceptKey));
+}
+
 export function upsertLine(lines, add, stock) {
   const next = (lines || []).map((line) => ({ ...line }));
   const key = lineKey(add);
-  const cap = capFor(stock);
   const want = Math.round(Number(add.qty)) || 1;
   const index = next.findIndex((line) => lineKey(line) === key);
-  if (index === -1) {
-    const qty = Math.min(cap, want);
-    if (qty < 1) return { lines: next, added: 0 };
-    next.push({ ...add, qty });
-    return { lines: next, added: qty };
-  }
-  const qty = Math.min(cap, next[index].qty + want);
-  const added = Math.max(0, qty - next[index].qty);
-  next[index] = { ...next[index], ...add, qty };
-  return { lines: next, added };
+  const room = roomFor(next, add.product_id, key, stock);
+  const current = index === -1 ? 0 : (Math.round(Number(next[index].qty)) || 0);
+  const qty = Math.min(room, current + (want > 0 ? want : 1));
+  if (qty < 1) return { lines: next, added: 0 };
+  const row = { ...add, qty };
+  if (index === -1) next.push(row);
+  else next[index] = { ...next[index], ...row };
+  return { lines: next, added: qty - current };
 }
 
 export function setLineQty(lines, key, qty, stock) {
   const q = Math.round(Number(qty));
   if (!Number.isFinite(q) || q < 1) return (lines || []).filter((line) => lineKey(line) !== key);
-  const cap = capFor(stock);
-  if (cap < 1) return (lines || []).filter((line) => lineKey(line) !== key);
+  const current = (lines || []).find((line) => lineKey(line) === key);
+  if (!current) return lines || [];
+  const room = roomFor(lines, current.product_id, key, stock);
+  if (room < 1) return (lines || []).filter((line) => lineKey(line) !== key);
   return (lines || []).map((line) => (
-    lineKey(line) === key ? { ...line, qty: Math.min(cap, q) } : line
+    lineKey(line) === key ? { ...line, qty: Math.min(room, q) } : line
   ));
+}
+
+export function clampBasket(lines, products) {
+  if (!Array.isArray(products)) return lines || [];
+  const byId = new Map(products.map((item) => [item.id, item]));
+  const next = [];
+  const used = new Map();
+  for (const line of lines || []) {
+    const product = byId.get(line.product_id);
+    if (!product) {
+      next.push(line);
+      continue;
+    }
+    if (product.active === false) continue;
+    const stock = Number(product.stock);
+    const cap = Number.isFinite(stock) ? capFor(stock) : 99;
+    const already = used.get(line.product_id) || 0;
+    const room = Math.max(0, cap - already);
+    const qty = Math.min(room, Math.round(Number(line.qty)) || 0);
+    if (qty < 1) continue;
+    used.set(line.product_id, already + qty);
+    next.push({ ...line, qty });
+  }
+  return next;
 }
 
 export function previewTotals(lines) {
@@ -280,12 +320,18 @@ export function thanksLines(order) {
 
 export function stockProblem(lines, products) {
   if (!products) return '';
+  const totals = new Map();
   for (const line of lines || []) {
     const product = products.find((item) => item.id === line.product_id);
     if (!product || product.active === false) return 'W koszyku jest produkt, który jest już niedostępny.';
-    const stock = Number(product.stock);
+    const id = String(line.product_id);
+    totals.set(id, (totals.get(id) || 0) + (Number(line.qty) || 0));
+  }
+  for (const [id, qty] of totals) {
+    const product = products.find((item) => item.id === id);
+    const stock = Number(product?.stock);
     if (Number.isFinite(stock) && stock <= 0) return 'Ten produkt właśnie się wyprzedał.';
-    if (Number.isFinite(stock) && Number(line.qty) > stock) return 'Za duża ilość względem stanu. Zmniejsz liczbę sztuk.';
+    if (Number.isFinite(stock) && qty > stock) return 'Za duża ilość względem stanu. Zmniejsz liczbę sztuk.';
   }
   return '';
 }
