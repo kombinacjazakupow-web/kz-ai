@@ -36,6 +36,23 @@
   --tap: 44px;
   color-scheme: light;
 }
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --canvas: #16130f;
+    --canvas-soft: #221e19;
+    --ink: #f6f1e8;
+    --ink-2: #e7dfd2;
+    --mute: #c4b8a6;
+    --mute-2: #b7ab99;
+    --hairline: #3c342c;
+    --hairline-input: #6d5e4e;
+    --cream: #3a3124;
+    --shadow: rgba(0, 0, 0, 0.45);
+    --primary-sub: #3a3568;
+    --primary-deep: #d9d4ff;
+  }
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
@@ -301,7 +318,7 @@ textarea { min-height: 110px; resize: vertical; }
   max-width: 100%;
   background: var(--primary-sub);
   color: var(--primary-deep);
-  font-size: 10px;
+  font-size: 16px;
   font-weight: 400;
   letter-spacing: 0.1px;
   line-height: 1.15;
@@ -388,15 +405,22 @@ textarea { min-height: 110px; resize: vertical; }
 .chips legend { font-weight: 300; font-size: 16px; margin-bottom: 8px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
-  min-height: 44px;
+  min-height: 48px;
   padding: 8px 16px;
   border-radius: 9999px;
   border: 1px solid var(--primary);
   background: var(--canvas);
   color: var(--primary);
   font-weight: 400;
-  font-size: 14px;
+  font-size: 16px;
 }
+.chip.gone, .chip:disabled {
+  color: var(--mute);
+  border-color: var(--hairline);
+  background: var(--canvas-soft);
+  text-decoration: line-through;
+}
+.chip.gone s { text-decoration: line-through; }
 .chip.on { background: var(--primary); color: #fff; }
 .chip.on:active, .chip:active { background: var(--primary-press); color: #fff; }
 

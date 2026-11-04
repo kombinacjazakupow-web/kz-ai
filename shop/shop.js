@@ -3,11 +3,14 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, stockBadge, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
+import {
+  cleanVariants, colorViews, freshBadge, isSoldOut, orderCatalog, stockForColor, variantError,
+} from './variants.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
@@ -44,6 +47,7 @@ const state = {
   proofBusy: '',
   installReady: false,
   installEvent: null,
+  variants: [],
   session: null,
   accountLoading: false,
   accountLoaded: false,
@@ -159,18 +163,17 @@ function pricedLines() {
 function visibleProducts() {
   const q = state.query.trim().toLocaleLowerCase('pl');
   const list = state.products.filter((item) => item.active !== false);
-  if (!q) return list;
-  return list.filter((item) => {
+  const matched = !q ? list : list.filter((item) => {
     const hay = [item.title, item.code, item.description, item.sizes, item.colors]
       .map((part) => String(part || '').toLocaleLowerCase('pl'))
       .join(' ');
     return hay.includes(q);
   });
+  return orderCatalog(matched, state.variants);
 }
 
-function stockOf(product) {
-  const n = Number(product?.stock);
-  return Number.isFinite(n) ? n : null;
+function stockOf(product, color) {
+  return stockForColor(product, state.variants, color ?? state.pick.color);
 }
 
 function heldQty(productId) {
@@ -286,8 +289,8 @@ function gridHtml() {
   const list = visibleProducts();
   if (!list.length) return '';
   return list.map((product, index) => {
-    const badge = stockBadge(product.stock);
-    const sold = badge === 'Wyprzedane';
+    const badge = freshBadge(product, state.variants);
+    const sold = isSoldOut(product, state.variants);
     const badgeHtml = badge
       ? `<span class="badge${sold ? ' sold' : ''}">${esc(badge)}</span>`
       : '';
@@ -317,18 +320,17 @@ function productMain(code) {
   const dots = photos.length > 1
     ? `<div class="dots" id="dots">${photos.map((_, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="Zdjęcie ${i + 1}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
     : '';
-  const badge = stockBadge(product.stock);
-  const sold = badge === 'Wyprzedane';
+  const badge = freshBadge(product, state.variants);
+  const sold = isSoldOut(product, state.variants);
   const sizes = splitList(product.sizes);
-  const colors = splitList(product.colors);
   const left = addRoom(product);
   if (left > 0 && state.pick.qty > left) state.pick.qty = left;
   const max = Math.max(left, 1);
   const buy = sold
-    ? '<p class="badge sold" style="position:static;display:inline-block">Wyprzedane</p>'
+    ? '<p class="badge sold" style="position:static;display:inline-block">WYPRZEDANE</p>'
     : left < 1
     ? '<p>W koszyku jest już cały dostępny stan.</p>'
-    : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${chips('color', 'Kolor', colors, state.pick.color)}
+    : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${colorChips(product)}
       <div class="stepper" aria-label="Ilość">
         <button type="button" data-act="pqty" data-dir="-1" aria-label="Mniej" ${state.pick.qty <= 1 ? 'disabled' : ''}>−</button>
         <span id="pqty">${esc(String(state.pick.qty))}</span>
@@ -356,6 +358,20 @@ function productMain(code) {
   </main>`;
 }
 
+function colorChips(product) {
+  const views = colorViews(product, state.variants);
+  if (!views.length) return '';
+  const buttons = views.map((view) => {
+    const gone = view.stock === 0;
+    const on = !gone && view.name === state.pick.color;
+    if (gone) {
+      return `<button type="button" class="chip gone" disabled aria-pressed="false"><s>${esc(view.name)}</s> wyprzedane</button>`;
+    }
+    return `<button type="button" class="chip${on ? ' on' : ''}" data-act="pick" data-kind="color" data-val="${esc(view.name)}" aria-pressed="${on ? 'true' : 'false'}">${esc(view.name)}</button>`;
+  }).join('');
+  return `<fieldset class="chips"><legend>Kolor</legend><div class="chip-row">${buttons}</div></fieldset>`;
+}
+
 function chips(kind, label, options, selected) {
   if (!options.length) return '';
   const buttons = options.map((option) => {
@@ -374,7 +390,7 @@ function basketMain() {
   const rows = lines.map((line) => {
     const meta = [line.size, line.color].filter(Boolean).join(' · ');
     const product = productById(line.product_id);
-    const stock = product ? stockOf(product) : null;
+    const stock = product ? stockOf(product, line.color) : null;
     const cap = stock == null ? 99 : Math.max(0, stock);
     return `<article class="line">
       <div class="thumb">${thumbHtml(line.photo, line.title, false)}</div>
@@ -855,9 +871,10 @@ async function placeOrder(form) {
     } else {
       const body = coerceOrder(data);
       if (body?.error) {
-        failed = mapOrderError(body.error);
+        failed = variantError(body.error) || mapOrderError(body.error);
+        state.problemCode = '';
         const raw = String(body.error);
-        state.problemCode = raw.startsWith('out_of_stock:') ? raw.split(':').slice(1).join(':') : '';
+        if (raw.startsWith('color:') || raw.startsWith('out_of_stock:')) loadVariants();
       } else if (!body?.order_no) {
         failed = 'Nie udało się złożyć zamówienia. Spróbuj jeszcze raz.';
       } else {
@@ -885,12 +902,14 @@ async function placeOrder(form) {
 
 function syncPick(product) {
   const sizes = splitList(product.sizes);
-  const colors = splitList(product.colors);
+  const available = colorViews(product, state.variants)
+    .filter((view) => view.stock == null || view.stock > 0)
+    .map((view) => view.name);
   if (state.pick.code !== String(product.code)) {
     state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
   }
   state.pick.size = settleOption(sizes, state.pick.size);
-  state.pick.color = settleOption(colors, state.pick.color);
+  state.pick.color = settleOption(available, state.pick.color);
 }
 
 function addCurrent() {
@@ -899,10 +918,10 @@ function addCurrent() {
   if (!product) return;
   syncPick(product);
   const sizes = splitList(product.sizes);
-  const colors = splitList(product.colors);
+  const colors = colorViews(product, state.variants).filter((view) => view.stock == null || view.stock > 0);
   if (sizes.length && !state.pick.size) { toast('Wybierz rozmiar.'); return; }
   if (colors.length && !state.pick.color) { toast('Wybierz kolor.'); return; }
-  const stock = stockOf(product);
+  const stock = stockOf(product, state.pick.color);
   if (stock != null && stock <= 0) { toast('Wyprzedane.'); return; }
   const result = upsertLine(state.basket, {
     product_id: product.id,
@@ -958,7 +977,9 @@ function onClick(event) {
     const kind = target.dataset.kind;
     const product = findProduct(state.pick.code);
     if (!product || (kind !== 'size' && kind !== 'color')) return;
-    const options = splitList(kind === 'size' ? product.sizes : product.colors);
+    const options = kind === 'size'
+      ? splitList(product.sizes)
+      : colorViews(product, state.variants).filter((view) => view.stock == null || view.stock > 0).map((view) => view.name);
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
     else state.pick.color = chosen;
@@ -988,7 +1009,7 @@ function onClick(event) {
     const key = target.dataset.key || '';
     const line = state.basket.find((item) => lineKey(item) === key);
     const product = line ? productById(line.product_id) : null;
-    const stock = product ? stockOf(product) : null;
+    const stock = product ? stockOf(product, line.color) : null;
     if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, stock == null ? undefined : stock));
     else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), stock == null ? undefined : stock));
     paint({ keep: true });
@@ -1156,9 +1177,17 @@ async function loadProducts() {
     setBasket(clampBasket(state.basket, state.products));
     state.loaded = true;
     state.error = '';
+    loadVariants();
   }
   paint({ keep: true });
   if (error && hadCatalog) toast('Nie udało się odświeżyć.');
+}
+
+async function loadVariants() {
+  const { data, error } = await sb.from('shop_variants').select('product_id,color,stock');
+  if (error) return;
+  state.variants = cleanVariants(data);
+  paint({ keep: true });
 }
 
 function start() {
