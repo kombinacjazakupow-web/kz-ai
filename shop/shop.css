@@ -629,6 +629,16 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
 .install-card p, .install-card li { font-size: 16px; }
 .install-card ol { margin: 8px 0 12px; padding-left: 20px; }
 .install-card .btn { min-height: var(--tap); margin: 0 8px 8px 0; }
+.soon { margin: 24px 0 8px; scroll-margin-top: 128px; }
+.soon h2, .soon-card h3 { font-family: var(--serif); font-weight: 400; }
+.soon-card {
+  margin: 0 0 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--cream);
+}
+.soon-card p { font-size: 16px; }
+.soon-card .btn { min-height: var(--tap); }
 .remembered { display: flex; flex-direction: column; gap: 8px; }
 .remembered .btn { align-self: flex-start; min-height: var(--tap); }
 .proof .note-box { background: #f3f1ff; }

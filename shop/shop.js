@@ -17,6 +17,7 @@ import { buyerLine, hasSavedBuyer } from './checkout.js';
 import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
 import { reelItems } from './rolki.js';
 import { INSTALL_HIDE_KEY, installKind } from './install.js';
+import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   accountEmptyText, claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
@@ -302,6 +303,7 @@ function catalogMain() {
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
     <p id="result-note" class="hint">${esc(resultNoteText())}</p>
     <div id="grid" class="grid">${gridHtml()}</div>
+    ${soonHtml()}
   </main>`;
 }
 
@@ -558,6 +560,26 @@ function buyerFields(draft, err) {
       ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
       ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
       ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
+}
+
+function readInterest() {
+  if (Array.isArray(state.interest)) return state.interest;
+  const stored = readJson(INTEREST_KEY, []);
+  state.interest = Array.isArray(stored) ? stored : [];
+  return state.interest;
+}
+
+function soonHtml() {
+  const saved = readInterest();
+  const cards = SOON.map((item) => {
+    const on = saved.includes(item.id);
+    return `<article class="soon-card">
+      <h3>${esc(item.title)}</h3>
+      <p>${esc(item.text)}</p>
+      <button type="button" class="btn" data-act="interest" data-id="${esc(item.id)}" aria-pressed="${on ? 'true' : 'false'}">${on ? 'Zapisane na tym telefonie' : 'Daj mi znać'}</button>
+    </article>`;
+  }).join('');
+  return `<section class="soon"><h2>Wkrótce</h2>${cards}</section>`;
 }
 
 function installCard() {
@@ -1129,6 +1151,12 @@ function onClick(event) {
     return;
   }
   if (act === 'install') { offerInstallPrompt(); return; }
+  if (act === 'interest') {
+    state.interest = toggleInterest(readInterest(), target.dataset.id || '');
+    writeJson(INTEREST_KEY, state.interest);
+    paint({ keep: true });
+    return;
+  }
   if (act === 'install-hide') {
     state.installHide = true;
     try { localStorage.setItem(INSTALL_HIDE_KEY, '1'); } catch { /* the card stays hidden for this visit */ }
