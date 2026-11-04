@@ -23,6 +23,7 @@ body {
 }
 button, input, textarea { font: inherit; color: inherit; }
 a { color: inherit; }
+html[data-shop-saving] a { pointer-events: none; }
 button, .btn, .chip, .choice, .cartlink, .iconbtn {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;

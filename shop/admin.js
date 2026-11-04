@@ -62,7 +62,26 @@ function fileUrl(file) {
   return file._url;
 }
 
+let saveHash = '';
+
+function captureProductForm() {
+  const form = document.getElementById('product-form');
+  if (!form || state.saving) return;
+  state.formDraft = {
+    code: form.code?.value ?? '',
+    title: form.title?.value ?? '',
+    description: form.description?.value ?? '',
+    price: form.price?.value ?? '',
+    sizes: form.sizes?.value ?? '',
+    colors: form.colors?.value ?? '',
+    stock: form.stock?.value ?? '',
+    sort: form.sort?.value ?? '',
+    active: !!form.elements.namedItem('active')?.checked,
+  };
+}
+
 function syncForm() {
+  if (state.saving) return;
   const route = parseAdminRoute(location.hash);
   const key = `${route.name}:${route.id || ''}`;
   if (key === formKey) return;
@@ -242,7 +261,7 @@ function editMain(id) {
       <div class="thumbs">${kept}${fresh}</div>
       <div class="wide-actions">
         <button type="submit" class="btn primary" id="save"${state.saving ? ' disabled' : ''}>Zapisz</button>
-        <a class="btn ghost" href="#/produkty">Anuluj</a>
+        <a class="btn ghost" href="#/produkty"${state.saving ? ' aria-disabled="true" tabindex="-1"' : ''}>Anuluj</a>
       </div>
     </form>
   </main>`;
@@ -619,12 +638,13 @@ export async function resizeToJpeg(file, maxSide = MAX_SIDE, quality = JPEG_QUAL
   }
 }
 
-async function uploadPhotos(code) {
+async function uploadPhotos(code, files) {
+  const list = Array.isArray(files) ? files.slice() : [];
   const uploaded = [];
   const button = document.getElementById('save');
-  for (let i = 0; i < pendingFiles.length; i += 1) {
-    const file = pendingFiles[i];
-    if (button) button.textContent = `Zdjęcie ${i + 1} z ${pendingFiles.length}…`;
+  for (let i = 0; i < list.length; i += 1) {
+    const file = list[i];
+    if (button) button.textContent = `Zdjęcie ${i + 1} z ${list.length}…`;
     if (file.size > 15 * 1024 * 1024) throw new Error('big');
     const blob = await resizeToJpeg(file);
     const path = `products/${code}/${uuid()}.jpg`;
@@ -653,9 +673,10 @@ async function saveProduct(form) {
     stock: form.stock.value,
     sort: form.sort.value,
   };
+  const active = !!form.elements.namedItem('active')?.checked;
   state.formDraft = {
     ...value,
-    active: !!form.elements.namedItem('active')?.checked,
+    active,
   };
   const checked = validateProduct(value, editingId);
   const product = editingId ? state.products.find((item) => item.id === editingId) : null;
@@ -671,7 +692,10 @@ async function saveProduct(form) {
     document.querySelector('[aria-invalid="true"]')?.focus();
     return;
   }
+  const files = pendingFiles.slice();
   state.saving = true;
+  saveHash = location.hash;
+  document.documentElement.dataset.shopSaving = '1';
   const button = document.getElementById('save');
   if (button) {
     button.disabled = true;
@@ -679,7 +703,7 @@ async function saveProduct(form) {
   }
   let uploaded = [];
   try {
-    uploaded = await uploadPhotos(checked.code);
+    uploaded = await uploadPhotos(checked.code, files);
     const photos = kept.concat(uploaded);
     const payload = {
       code: checked.code,
@@ -690,7 +714,7 @@ async function saveProduct(form) {
       colors: normalizeList(value.colors),
       stock: checked.stock,
       sort: checked.sort,
-      active: state.formDraft?.active === true,
+      active,
       photos,
     };
     const write = editingId
@@ -704,6 +728,8 @@ async function saveProduct(form) {
     state.productError = '';
     state.formDraft = null;
     state.saving = false;
+    saveHash = '';
+    document.documentElement.dataset.shopSaving = '';
     if (location.hash !== '#/produkty') location.hash = '#/produkty';
     await refreshProducts();
     toast('Zapisane.');
@@ -712,6 +738,8 @@ async function saveProduct(form) {
       try { await sb.storage.from('shop-photos').remove(uploaded); } catch { /* leftover file is not on the product */ }
     }
     state.saving = false;
+    saveHash = '';
+    document.documentElement.dataset.shopSaving = '';
     const msg = `${err?.message || ''} ${err?.code || ''}`.toLowerCase();
     if (err?.message === 'big') state.productError = 'Zdjęcie jest za duże (max 15 MB).';
     else if (err?.message === 'image' || err?.message === 'blob') state.productError = 'Nie udało się zmniejszyć zdjęcia. Wybierz JPEG albo zrób je jeszcze raz.';
@@ -751,11 +779,14 @@ async function setStatus(id, status) {
 }
 
 function addFiles(list) {
+  if (state.saving) return;
+  captureProductForm();
   for (const file of list || []) pendingFiles.push(file);
   paint({ keep: true });
 }
 
 function onClick(event) {
+  if (state.saving) return;
   const target = event.target.closest('[data-act]');
   if (!target) return;
   const act = target.dataset.act;
@@ -788,11 +819,13 @@ function onClick(event) {
   }
   if (act === 'status') { setStatus(target.dataset.id, target.dataset.status); return; }
   if (act === 'drop-photo') {
+    captureProductForm();
     state.dropPhotos.add(target.dataset.path || '');
     paint({ keep: true });
     return;
   }
   if (act === 'drop-file') {
+    captureProductForm();
     const index = Number(target.dataset.idx);
     const [file] = pendingFiles.splice(index, 1);
     if (file?._url) URL.revokeObjectURL(file._url);
@@ -802,6 +835,8 @@ function onClick(event) {
 
 function onChange(event) {
   const input = event.target;
+  if (input.closest('#product-form') && input.id !== 'cam' && input.id !== 'files') captureProductForm();
+  if (state.saving) return;
   if (input.id !== 'cam' && input.id !== 'files') return;
   addFiles(input.files);
   input.value = '';
@@ -816,10 +851,20 @@ function onSubmit(event) {
 function start() {
   readLoginError();
   const root = document.getElementById('admin');
+  root.addEventListener('click', (event) => {
+    if (state.saving && event.target.closest('a')) event.preventDefault();
+  }, true);
   root.addEventListener('click', onClick);
+  root.addEventListener('input', (event) => {
+    if (event.target.closest('#product-form')) captureProductForm();
+  });
   root.addEventListener('change', onChange);
   root.addEventListener('submit', onSubmit);
   window.addEventListener('hashchange', () => {
+    if (state.saving) {
+      if (saveHash && location.hash !== saveHash) history.replaceState(null, '', saveHash);
+      return;
+    }
     if (state.screen === 'app') paint();
   });
   sb.auth.onAuthStateChange((event, session) => {
