@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { reelItems } from './rolki.js';
+import { reelItems, reelOnScreen } from './rolki.js';
 import { parseRoute } from './common.js';
 
 const rows = [
@@ -11,4 +11,7 @@ const rows = [
 const films = reelItems(rows);
 assert.deepEqual(films.map((item) => item.code), ['A']);
 assert.equal(parseRoute('#/rolki').name, 'reels');
+assert.equal(reelOnScreen(1), true);
+assert.equal(reelOnScreen(0.6), true);
+assert.equal(reelOnScreen(0.59), false);
 console.log('rolki-check ok');

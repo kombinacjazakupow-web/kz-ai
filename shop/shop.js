@@ -15,7 +15,7 @@ import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
 import { buyerLine, savedBuyerOk } from './checkout.js';
 import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
-import { reelItems } from './rolki.js';
+import { reelItems, reelOnScreen } from './rolki.js';
 import { INSTALL_HIDE_KEY, installKind } from './install.js';
 import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
 import {
@@ -604,7 +604,7 @@ function reelsMain() {
   const cards = films.map((item) => {
     const code = encodeURIComponent(String(item.code || ''));
     return `<section class="reel">
-      <video muted playsinline loop autoplay src="${esc(videoSrc(item.video_url))}"></video>
+      <video muted playsinline loop src="${esc(videoSrc(item.video_url))}"></video>
       <a class="reel-back" href="#/">← Sklep</a>
       <div class="reel-bar">
         <p class="reel-title">${esc(item.title || 'Produkt')}</p>
@@ -932,6 +932,7 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
+  watchReels();
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
   if (!gallery || !dots) return;
@@ -943,6 +944,25 @@ function afterPaint() {
   };
   gallery.addEventListener('scroll', mark, { passive: true });
   mark();
+}
+
+function watchReels() {
+  const root = document.querySelector('main.reels');
+  if (!root) return;
+  const videos = [...root.querySelectorAll('video')];
+  if (!videos.length) return;
+  if (typeof IntersectionObserver !== 'function') {
+    videos[0].play().catch(() => {});
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const video = entry.target;
+      if (reelOnScreen(entry.intersectionRatio) && entry.isIntersecting) video.play().catch(() => {});
+      else video.pause();
+    }
+  }, { root, threshold: [0, 0.6, 1] });
+  videos.forEach((video) => observer.observe(video));
 }
 
 function scrollGallery(dir) {
