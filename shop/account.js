@@ -3,6 +3,11 @@
 export const PROMO_CODE = 'PACZKA-5';
 export const PROMO_SEEN_KEY = 'kombi-shop-promo-paczka-5';
 export const AUTH_STORAGE_KEY = 'kombi-shop-auth';
+export const SERVICE_LINE = 'WhatsApp Obsługa Klienta +48 792 402 881';
+
+export function accountEmptyText(count) {
+  return Number(count) > 0 ? '' : 'Nie masz jeszcze zamówień na tym koncie.';
+}
 
 const CLAIM_TEXT = {
   ok: 'Numer dopisany. Oto Twoje zamówienia.',
