@@ -932,13 +932,6 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
-  document.querySelectorAll('img[data-fallback]').forEach((img) => {
-    img.addEventListener('load', () => img.classList.add('in'));
-    img.addEventListener('error', () => {
-      const fallback = img.dataset.fallback || '';
-      if (fallback && img.src !== fallback) img.src = fallback;
-    }, { once: true });
-  });
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
   if (!gallery || !dots) return;
@@ -1400,6 +1393,16 @@ function start() {
   state.thanks = loadThanks();
   try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
   const root = document.getElementById('app');
+  root.addEventListener('load', (event) => {
+    const img = event.target;
+    if (img?.tagName === 'IMG') img.classList.add('in');
+  }, true);
+  root.addEventListener('error', (event) => {
+    const img = event.target;
+    if (img?.tagName !== 'IMG') return;
+    const fallback = img.dataset.fallback || '';
+    if (fallback && img.getAttribute('src') !== fallback) img.src = fallback;
+  }, true);
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
