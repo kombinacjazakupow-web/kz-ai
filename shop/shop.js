@@ -18,7 +18,7 @@ import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
 import { reelItems } from './rolki.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
-  claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
+  accountEmptyText, claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
 } from './account.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -694,6 +694,7 @@ function accountLogin() {
     <h1>Moje konto</h1>
     <p class="hint">Wyślemy link do logowania na e-mail. Hasło nie jest potrzebne.</p>
     ${accountNoteHtml()}
+    <p class="service">${esc(SERVICE_LINE)}</p>
     <form id="magic-link">
       ${field('email', 'E-mail', '', 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
       <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
@@ -722,12 +723,13 @@ function accountOrdersView() {
     <p><button type="button" class="btn ghost" data-act="logout">Wyloguj</button></p>
     ${accountNoteHtml()}
     ${claim}
-    ${state.accountLinks.length ? accountOrderCards() : ''}
+    ${state.accountLinks.length ? accountOrderCards() : `<p>${esc(accountEmptyText(0))}</p>`}
+    <p class="service">${esc(SERVICE_LINE)}</p>
   </main>`;
 }
 
 function accountOrderCards() {
-  if (!state.accountOrders.length) return '<p>Nie ma jeszcze zamówień na dopisanych numerach.</p>';
+  if (!state.accountOrders.length) return `<p>${esc(accountEmptyText(0))}</p>`;
   return state.accountOrders.map((order) => {
     const lines = order.lines.map((line) => `<li>${esc(line)}</li>`).join('');
     const track = order.track
