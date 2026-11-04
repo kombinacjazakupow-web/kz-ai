@@ -10,7 +10,7 @@ import {
 } from './common.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
-  claimCode, claimMessage, emailOk, mergeAccountOrders, promoProduct, shouldShowPromo,
+  claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
 } from './account.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -601,6 +601,7 @@ function accountOrderCards() {
       ? `<p><a class="btn" href="${esc(order.track)}" target="_blank" rel="noopener noreferrer">Śledź paczkę</a></p>`
       : '';
     return `<article class="order">
+      <p class="order-source">${esc(orderSourceLabel(order.source))}</p>
       <header>
         <time>${esc(formatWhen(order.created_at))}</time>
         <strong class="price">${esc(order.order_no)}</strong>

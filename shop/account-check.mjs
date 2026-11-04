@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  claimMessage, clientStatus, emailOk, mergeAccountOrders, promoProduct,
+  claimMessage, clientStatus, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct,
   shouldShowPromo, trackUrl, PROMO_CODE,
 } from './account.js';
 import { BLIK_COPY, TRANSFER_COPY, SLOGANS, parseRoute } from './common.js';
@@ -19,6 +19,12 @@ assert.equal(clientStatus('Doręczona'), 'Doręczona');
 assert.equal(clientStatus('W realizacji', 'Przesyłka doręczona'), 'Doręczona');
 assert.equal(clientStatus('W realizacji', 'Przekazano do doręczenia'), 'Przyjęte');
 assert.equal(clientStatus('cokolwiek'), 'Przyjęte');
+assert.equal(clientStatus('przyjete'), 'Przyjęte');
+assert.equal(clientStatus('pakujemy'), 'Pakujemy');
+assert.equal(clientStatus('nieoplacone'), 'Czeka na płatność');
+assert.equal(clientStatus('nieopłacone'), 'Czeka na płatność');
+assert.equal(orderSourceLabel('live'), 'Zamówienie z live');
+assert.equal(orderSourceLabel('shop'), 'Zamówienie ze sklepu');
 
 assert.equal(claimMessage('ok'), 'Numer dopisany. Oto Twoje zamówienia.');
 assert.equal(claimMessage('nomatch'), 'Nie znaleźliśmy zamówienia z tym telefonem i numerem.');
@@ -52,12 +58,23 @@ const orders = mergeAccountOrders(
   }],
 );
 assert.deepEqual(orders.map((order) => order.order_no), ['9001', 'KS1001']);
+assert.equal(orders[0].source, 'live');
+assert.equal(orders[1].source, 'shop');
 assert.equal(orders[0].status, 'Doręczona');
 assert.equal(orders[0].lines[0], 'Paczka testowa × 2');
 assert.equal(orders[0].track, 'https://tracktrace.dpd.com.pl/parcelDetails?typ=1&p1=00000000000001');
 assert.equal(orders[1].status, 'Pakujemy');
 assert.equal(orders[1].amount, 74);
 assert.equal(orders[1].lines[0], 'Sukienka testowa · M · czarny × 1');
+const unpaid = mergeAccountOrders([], [], [{
+  order_no: '9002',
+  created_at: '2026-11-04T09:00:00.000Z',
+  status: 'nieoplacone',
+  products_total: 49,
+  items: [{ name: 'Test', qty: 1 }],
+}]);
+assert.equal(unpaid[0].status, 'Czeka na płatność');
+assert.equal(unpaid[0].source, 'live');
 assert.equal(trackUrl('zły numer'), '');
 assert.equal(trackUrl(''), '');
 
@@ -78,6 +95,7 @@ assert.match(shop, /emailRedirectTo: location\.origin \+ location\.pathname/);
 assert.match(shop, /signInWithOtp/);
 assert.match(shop, /Moje konto/);
 assert.match(shop, /Śledź paczkę/);
+assert.match(shop, /orderSourceLabel/);
 assert.doesNotMatch(shop, /shop_place_order[\s\S]{0,80}price/);
 
 assert.equal(BLIK_COPY, '796 669 157');

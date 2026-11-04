@@ -74,7 +74,12 @@ export function clientStatus(status, dpdState) {
   if (shipped(raw)) return 'Wysłana';
   if (packing(raw) || packing(dpd)) return 'Pakujemy';
   if (hasWord(raw, ['anulowane', 'anulowana', 'anulowany', 'cancelled', 'canceled'])) return 'Anulowane';
+  if (hasWord(raw, ['nieoplacone', 'nieoplacony', 'nieoplacona'])) return 'Czeka na płatność';
   return 'Przyjęte';
+}
+
+export function orderSourceLabel(source) {
+  return source === 'live' ? 'Zamówienie z live' : 'Zamówienie ze sklepu';
 }
 
 export function safeWaybill(value) {
@@ -128,6 +133,7 @@ export function mergeAccountOrders(shopOrders, shopItems, extOrders) {
     order_no: String(order?.order_no || ''),
     created_at: String(order?.created_at || ''),
     amount: shopAmount(order),
+    source: 'shop',
     status: clientStatus(order?.status, ''),
     track: '',
     lines: itemsByOrder.get(order?.id) || [],
@@ -136,6 +142,7 @@ export function mergeAccountOrders(shopOrders, shopItems, extOrders) {
     order_no: String(order?.order_no || ''),
     created_at: String(order?.created_at || ''),
     amount: Number(order?.products_total) || 0,
+    source: 'live',
     status: clientStatus(order?.status, order?.dpd_state),
     track: trackUrl(order?.dpd_waybill),
     lines: (Array.isArray(order?.items) ? order.items : []).map(extLine),
