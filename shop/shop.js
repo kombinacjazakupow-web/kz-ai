@@ -15,6 +15,7 @@ import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
 import { buyerLine, hasSavedBuyer } from './checkout.js';
 import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
+import { reelItems } from './rolki.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
@@ -241,11 +242,14 @@ function pageTitle() {
   }
   if (route.name === 'orders') return 'Moje zamówienia · KOMBI Sklep';
   if (route.name === 'account') return state.session ? 'Twoje zamówienia · KOMBI Sklep' : 'Moje konto · KOMBI Sklep';
+  if (route.name === 'reels') return 'Rolki · KOMBI Sklep';
   return 'KOMBI Sklep';
 }
 
 function shell() {
   const body = mainView();
+  const reels = parseRoute(location.hash).name === 'reels';
+  if (reels) return `${body}<div id="toast" class="toast" role="status" hidden></div>`;
   return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
 }
 
@@ -262,6 +266,7 @@ function topbar() {
 function footer() {
   return `<footer class="footer">
     <button type="button" class="install" id="install" data-act="install"${state.installReady ? '' : ' hidden'}>Zainstaluj aplikację</button>
+    <a href="#/rolki">Rolki</a>
     <a href="#/moje">Moje zamówienia</a>
     <a href="regulamin.html">Regulamin</a>
     <a href="prywatnosc.html">Polityka prywatności</a>
@@ -282,6 +287,7 @@ function mainView() {
   if (route.name === 'checkout') return checkoutMain();
   if (route.name === 'orders') return ordersMain();
   if (route.name === 'account') return accountMain();
+  if (route.name === 'reels') return reelsMain();
   return catalogMain();
 }
 
@@ -550,6 +556,26 @@ function buyerFields(draft, err) {
       ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
       ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
       ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
+}
+
+function reelsMain() {
+  const films = reelItems(state.products);
+  if (!films.length) {
+    return `<main class="center"><h1>Rolki</h1><p>Nie ma jeszcze filmów.</p><p><a class="btn primary" href="#/">Wróć do sklepu</a></p></main>`;
+  }
+  const cards = films.map((item) => {
+    const code = encodeURIComponent(String(item.code || ''));
+    return `<section class="reel">
+      <video muted playsinline loop autoplay src="${esc(videoSrc(item.video_url))}"></video>
+      <a class="reel-back" href="#/">← Sklep</a>
+      <div class="reel-bar">
+        <p class="reel-title">${esc(item.title || 'Produkt')}</p>
+        <a class="btn primary" href="#/p/${code}">Kup teraz</a>
+        <button type="button" class="btn" data-act="sound">Włącz dźwięk</button>
+      </div>
+    </section>`;
+  }).join('');
+  return `<main class="reels">${cards}</main>`;
 }
 
 function homeSurpriseHtml() {
@@ -1054,6 +1080,14 @@ function onClick(event) {
     state.editBuyer = true;
     saveDraft(emptyDraft());
     paint({ keep: true });
+    return;
+  }
+  if (act === 'sound') {
+    const video = target.closest('.reel')?.querySelector('video');
+    if (!video) return;
+    video.muted = !video.muted;
+    target.textContent = video.muted ? 'Włącz dźwięk' : 'Wyłącz dźwięk';
+    if (!video.muted) video.play().catch(() => {});
     return;
   }
   if (act === 'los') {
