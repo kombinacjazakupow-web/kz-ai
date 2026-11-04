@@ -3,15 +3,27 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, stockBadge, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, stockBadge, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
+import {
+  AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
+  claimCode, claimMessage, emailOk, mergeAccountOrders, promoProduct, shouldShowPromo,
+} from './account.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  auth: {
+    flowType: 'pkce',
+    detectSessionInUrl: true,
+    persistSession: true,
+    autoRefreshToken: true,
+    storageKey: AUTH_STORAGE_KEY,
+  },
 });
+
+const returnFromEmail = /(?:^|[?&])(code|error|error_description)=/.test(location.search);
 
 const state = {
   products: [],
@@ -32,7 +44,20 @@ const state = {
   proofBusy: '',
   installReady: false,
   installEvent: null,
+  session: null,
+  accountLoading: false,
+  accountLoaded: false,
+  accountLinks: [],
+  accountOrders: [],
+  accountNote: '',
+  accountBusy: false,
+  magicSent: false,
+  promoOpen: false,
+  promoDismissed: false,
 };
+
+let accountGen = 0;
+let booted = false;
 
 function emptyDraft() {
   return {
@@ -173,10 +198,14 @@ function paint(opts = {}) {
   const root = document.getElementById('app');
   if (!root) return;
   const y = opts.keep ? window.scrollY : 0;
+  syncPromo();
   document.title = pageTitle();
   root.innerHTML = shell();
   afterPaint();
   window.scrollTo(0, y);
+  if (parseRoute(location.hash).name === 'account' && state.session && !state.accountLoaded && !state.accountLoading) {
+    loadAccount();
+  }
 }
 
 function pageTitle() {
@@ -190,12 +219,13 @@ function pageTitle() {
     return product ? `${product.title} · KOMBI Sklep` : 'Produkt · KOMBI Sklep';
   }
   if (route.name === 'orders') return 'Moje zamówienia · KOMBI Sklep';
+  if (route.name === 'account') return state.session ? 'Twoje zamówienia · KOMBI Sklep' : 'Moje konto · KOMBI Sklep';
   return 'KOMBI Sklep';
 }
 
 function shell() {
   const body = mainView();
-  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
+  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
 }
 
 function topbar() {
@@ -203,6 +233,7 @@ function topbar() {
   return `<header class="top">
     <a class="mark" href="#/">KS</a>
     <div class="top-title"><b>KOMBI</b><small>Sklep</small></div>
+    <a class="accountlink" href="#/konto">Moje konto</a>
     <a class="cartlink" href="#/koszyk" aria-label="Koszyk, ${n} szt.">Koszyk <span id="cart-count">${n ? esc(String(n)) : ''}</span></a>
   </header>`;
 }
@@ -229,6 +260,7 @@ function mainView() {
   if (route.name === 'basket') return basketMain();
   if (route.name === 'checkout') return checkoutMain();
   if (route.name === 'orders') return ordersMain();
+  if (route.name === 'account') return accountMain();
   return catalogMain();
 }
 
@@ -482,6 +514,223 @@ function proofBox(orderNo, phone) {
   </section>`;
 }
 
+function syncPromo() {
+  const route = parseRoute(location.hash).name;
+  const homeish = route === 'catalog' || route === 'account';
+  if (!homeish || state.promoDismissed) {
+    state.promoOpen = false;
+    return;
+  }
+  if (state.promoOpen) return;
+  let seen = false;
+  try { seen = sessionStorage.getItem(PROMO_SEEN_KEY) === '1'; } catch { seen = false; }
+  if (!shouldShowPromo(route, state.products, seen)) return;
+  try { sessionStorage.setItem(PROMO_SEEN_KEY, '1'); } catch { /* private mode still shows it once in memory */ }
+  state.promoOpen = true;
+}
+
+function promoHtml() {
+  if (!state.promoOpen) return '';
+  const product = promoProduct(state.products);
+  if (!product) return '';
+  const photo = photoList(product)[0];
+  const code = encodeURIComponent(String(product.code || ''));
+  return `<aside class="promo" id="promo">
+    ${thumbHtml(photo, product.title || 'Paczka', true)}
+    <span class="promo-copy">
+      <strong>${esc(product.title || 'Paczka')}</strong>
+      <span class="price">${esc(formatZl(product.price))}</span>
+      <a class="btn primary" href="#/p/${code}">Zobacz</a>
+    </span>
+    <button type="button" class="promo-x" data-act="promo-close" aria-label="Zamknij">×</button>
+  </aside>`;
+}
+
+function accountMain() {
+  if (!state.session) return accountLogin();
+  return accountOrdersView();
+}
+
+function accountNoteHtml() {
+  if (!state.accountNote) return '';
+  return `<p class="note-box" role="status">${esc(state.accountNote)}</p>`;
+}
+
+function accountLogin() {
+  return `<main>
+    <h1>Moje konto</h1>
+    <p class="hint">Wyślemy link do logowania na e-mail. Hasło nie jest potrzebne.</p>
+    ${accountNoteHtml()}
+    <form id="magic-link">
+      ${field('email', 'E-mail', '', 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
+      <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
+    </form>
+  </main>`;
+}
+
+function accountOrdersView() {
+  if (!state.accountLoaded) {
+    return `<main>
+      <h1>Twoje zamówienia</h1>
+      <p><button type="button" class="btn ghost" data-act="logout">Wyloguj</button></p>
+      <p>Ładowanie…</p>
+    </main>`;
+  }
+  const claim = state.accountLinks.length
+    ? ''
+    : `<form id="claim-order">
+        <p class="hint">Podaj telefon i numer jednego zamówienia (KS albo Selmo), żeby pokazać resztę.</p>
+        ${field('claim-phone', 'Telefon', '', 'tel', '', 'inputmode="tel" autocomplete="tel"')}
+        ${field('claim-no', 'Numer zamówienia', '', 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="40"')}
+        <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Pokaż zamówienia</button>
+      </form>`;
+  return `<main>
+    <h1>Twoje zamówienia</h1>
+    <p><button type="button" class="btn ghost" data-act="logout">Wyloguj</button></p>
+    ${accountNoteHtml()}
+    ${claim}
+    ${state.accountLinks.length ? accountOrderCards() : ''}
+  </main>`;
+}
+
+function accountOrderCards() {
+  if (!state.accountOrders.length) return '<p>Nie ma jeszcze zamówień na dopisanych numerach.</p>';
+  return state.accountOrders.map((order) => {
+    const lines = order.lines.map((line) => `<li>${esc(line)}</li>`).join('');
+    const track = order.track
+      ? `<p><a class="btn" href="${esc(order.track)}" target="_blank" rel="noopener noreferrer">Śledź paczkę</a></p>`
+      : '';
+    return `<article class="order">
+      <header>
+        <time>${esc(formatWhen(order.created_at))}</time>
+        <strong class="price">${esc(order.order_no)}</strong>
+        <span class="status">${esc(order.status)}</span>
+      </header>
+      ${lines ? `<ul class="order-lines">${lines}</ul>` : ''}
+      <p class="price">${esc(formatZl(order.amount))}</p>
+      ${track}
+    </article>`;
+  }).join('');
+}
+
+function clearAccount() {
+  accountGen += 1;
+  state.accountLoading = false;
+  state.accountLoaded = false;
+  state.accountLinks = [];
+  state.accountOrders = [];
+  state.accountBusy = false;
+}
+
+async function loadAccount() {
+  if (!state.session) return;
+  const gen = ++accountGen;
+  state.accountLoading = true;
+  state.accountLoaded = false;
+  try {
+    const links = await sb.from('shop_customer_links').select('phone9');
+    if (gen !== accountGen) return;
+    if (links.error) throw links.error;
+    state.accountLinks = links.data || [];
+    if (!state.accountLinks.length) {
+      state.accountOrders = [];
+      state.accountLoaded = true;
+      state.accountLoading = false;
+      paint({ keep: true });
+      return;
+    }
+    const [shopRes, extRes] = await Promise.all([
+      sb.from('shop_orders').select('id,order_no,created_at,status,products_total,delivery_fee').order('created_at', { ascending: false }),
+      sb.from('ext_orders').select('order_no,created_at,status,products_total,items,dpd_waybill,dpd_state').order('created_at', { ascending: false }),
+    ]);
+    if (gen !== accountGen) return;
+    if (shopRes.error) throw shopRes.error;
+    if (extRes.error) throw extRes.error;
+    const ids = (shopRes.data || []).map((order) => order.id).filter(Boolean);
+    let shopItems = [];
+    if (ids.length) {
+      const itemsRes = await sb.from('shop_order_items').select('order_id,title,size,color,qty').in('order_id', ids);
+      if (gen !== accountGen) return;
+      if (itemsRes.error) throw itemsRes.error;
+      shopItems = itemsRes.data || [];
+    }
+    state.accountOrders = mergeAccountOrders(shopRes.data || [], shopItems, extRes.data || []);
+    state.accountLoaded = true;
+    state.accountNote = state.accountNote && state.accountNote.startsWith('Numer dopisany') ? state.accountNote : '';
+  } catch {
+    if (gen !== accountGen) return;
+    state.accountOrders = [];
+    state.accountLoaded = true;
+    state.accountNote = 'Nie udało się pobrać zamówień.';
+  }
+  state.accountLoading = false;
+  paint({ keep: true });
+}
+
+async function sendMagic(form) {
+  if (state.accountBusy) return;
+  const email = String(form.elements.namedItem('email')?.value || '').trim();
+  if (!emailOk(email)) {
+    state.accountNote = 'Podaj adres e-mail.';
+    state.magicSent = false;
+    paint({ keep: true });
+    return;
+  }
+  state.accountBusy = true;
+  state.accountNote = '';
+  paint({ keep: true });
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: location.origin + location.pathname },
+  });
+  state.accountBusy = false;
+  state.magicSent = !error;
+  state.accountNote = error
+    ? 'Nie udało się wysłać linku. Spróbuj jeszcze raz.'
+    : 'Wysłaliśmy link. Otwórz go na tym telefonie.';
+  paint({ keep: true });
+}
+
+async function claimOrders(form) {
+  if (state.accountBusy) return;
+  const phone = String(form.elements.namedItem('claim-phone')?.value || '');
+  const orderNo = String(form.elements.namedItem('claim-no')?.value || '').trim();
+  if (!phoneOk(phone) || !orderNo) {
+    state.accountNote = claimMessage('input');
+    paint({ keep: true });
+    return;
+  }
+  state.accountBusy = true;
+  state.accountNote = '';
+  paint({ keep: true });
+  let code = '';
+  try {
+    const { data, error } = await sb.rpc('shop_claim_orders', {
+      p_phone: normalizePhone(phone),
+      p_order_no: orderNo,
+    });
+    if (!error) code = claimCode(data);
+  } catch {
+    code = '';
+  }
+  state.accountBusy = false;
+  state.accountNote = claimMessage(code);
+  if (code === 'ok') {
+    state.accountLoaded = false;
+    state.accountLinks = [];
+  }
+  paint({ keep: true });
+}
+
+async function logout() {
+  clearAccount();
+  state.magicSent = false;
+  state.accountNote = '';
+  try { await sb.auth.signOut({ scope: 'local' }); } catch { /* listener clears the screen */ }
+  state.session = null;
+  paint();
+}
+
 function ordersMain() {
   const cards = state.mine.map((order) => `<article class="order">
       <header><strong class="price">${esc(order.order_no)}</strong></header>
@@ -696,6 +945,14 @@ function onClick(event) {
     return;
   }
   if (act === 'install') { offerInstallPrompt(); return; }
+  if (act === 'promo-close') {
+    state.promoDismissed = true;
+    state.promoOpen = false;
+    try { sessionStorage.setItem(PROMO_SEEN_KEY, '1'); } catch { /* already counted for this visit */ }
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'logout') { logout(); return; }
   if (act === 'pick') {
     const kind = target.dataset.kind;
     const product = findProduct(state.pick.code);
@@ -769,6 +1026,16 @@ function onChange(event) {
 
 function onSubmit(event) {
   const form = event.target;
+  if (form.id === 'magic-link') {
+    event.preventDefault();
+    sendMagic(form);
+    return;
+  }
+  if (form.id === 'claim-order') {
+    event.preventDefault();
+    claimOrders(form);
+    return;
+  }
   if (form.id === 'find-order') {
     event.preventDefault();
     const orderNo = String(form.elements.namedItem('find-no')?.value || '').trim();
@@ -915,9 +1182,32 @@ function start() {
     event.preventDefault();
     scrollGallery(event.key === 'ArrowRight' ? 1 : -1);
   });
+  const authError = new URLSearchParams(location.search);
+  if (authError.get('error') || authError.get('error_description')) {
+    state.accountNote = 'Link logowania wygasł albo jest niepoprawny. Wyślij nowy.';
+  }
   state.loading = true;
+  booted = true;
   paint();
   loadProducts();
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'TOKEN_REFRESHED') {
+      state.session = session;
+      return;
+    }
+    const had = !!state.session;
+    state.session = session;
+    if (!session) {
+      clearAccount();
+    } else if (!had || event === 'SIGNED_IN') {
+      state.accountLoaded = false;
+      if (returnFromEmail && parseRoute(location.hash).name !== 'account') {
+        location.hash = '#/konto';
+        return;
+      }
+    }
+    if (booted) paint();
+  });
 }
 
 function offerInstallPrompt() {
