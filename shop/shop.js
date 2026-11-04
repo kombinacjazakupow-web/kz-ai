@@ -14,6 +14,7 @@ import {
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
 import { buyerLine, hasSavedBuyer } from './checkout.js';
+import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
@@ -216,6 +217,7 @@ function toast(msg, action) {
 function paint(opts = {}) {
   const root = document.getElementById('app');
   if (!root) return;
+  if (parseRoute(location.hash).name !== 'catalog') state.losHold = false;
   const y = opts.keep ? window.scrollY : 0;
   syncPromo();
   document.title = pageTitle();
@@ -288,8 +290,7 @@ function catalogMain() {
     ${heroHtml()}
     ${railHtml()}
     <h2 id="kolekcja">Kolekcja</h2>
-    <button type="button" class="btn luck" data-act="luck">${esc(LUCKY_LABEL)}</button>
-    <p id="slogan" class="slogan" hidden></p>
+    ${homeSurpriseHtml()}
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
     <p id="result-note" class="hint">${esc(resultNoteText())}</p>
     <div id="grid" class="grid">${gridHtml()}</div>
@@ -551,6 +552,26 @@ function buyerFields(draft, err) {
       ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
 }
 
+function homeSurpriseHtml() {
+  let seen = '';
+  try { seen = sessionStorage.getItem(LOS_HOME_KEY) || ''; } catch { seen = '1'; }
+  const next = openHomeSurprise(seen, !!state.losHold);
+  state.losHold = next.hold;
+  if (next.mark) {
+    try { sessionStorage.setItem(LOS_HOME_KEY, '1'); } catch { /* private mode still shows it in this paint */ }
+  }
+  return next.show ? losCard() : '';
+}
+
+function losCard() {
+  return `<button type="button" class="los" data-act="los" aria-pressed="false" aria-label="${esc(LUCKY_LABEL)}">
+    <span class="los-inner">
+      <span class="los-face los-front"><small>Niespodzianka</small><b>${esc(LUCKY_LABEL)}</b></span>
+      <span class="los-face los-back"></span>
+    </span>
+  </button>`;
+}
+
 function field(id, label, value, type, error, extra) {
   return `<label class="field" for="${id}"><span>${label}</span>
     <input id="${id}" name="${id}" type="${type}" value="${esc(value || '')}" ${error ? 'aria-invalid="true"' : ''} ${extra || ''}>
@@ -575,6 +596,7 @@ function thanksMain(order) {
     <p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(order.order_no)}">Kopiuj numer</button></p>
     <div class="paybox">${rows}</div>
     ${proofBox(order.order_no, order.phone)}
+    ${losCard()}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
   </main>`;
@@ -1034,14 +1056,13 @@ function onClick(event) {
     paint({ keep: true });
     return;
   }
-  if (act === 'luck') {
-    const el = document.getElementById('slogan');
-    if (!el) return;
-    el.textContent = pickSlogan();
-    el.hidden = false;
-    el.classList.remove('pop');
-    void el.offsetWidth;
-    el.classList.add('pop');
+  if (act === 'los') {
+    const card = target.closest('.los');
+    const back = card?.querySelector('.los-back');
+    if (!card || !back) return;
+    back.textContent = pickSlogan();
+    card.classList.add('flipped');
+    card.setAttribute('aria-pressed', 'true');
     return;
   }
   if (act === 'gal') { scrollGallery(Number(target.dataset.dir) || 1); return; }
