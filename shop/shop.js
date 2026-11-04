@@ -1,11 +1,12 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import {
-  SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY,
+  SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
-  esc, formatZl, photoUrl, splitList, parseRoute, stockBadge, sanitizeBasket,
+  LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
+  esc, formatZl, photoUrl, videoSrc, splitList, parseRoute, stockBadge, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
-  clampBasket,
-  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode,
+  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
+  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -26,6 +27,9 @@ const state = {
   formError: '',
   problemCode: '',
   busy: false,
+  mine: [],
+  proofNote: {},
+  proofBusy: '',
 };
 
 function emptyDraft() {
@@ -65,6 +69,10 @@ function saveThanks(order) {
     if (order) sessionStorage.setItem(THANKS_KEY, JSON.stringify(order));
     else sessionStorage.removeItem(THANKS_KEY);
   } catch { /* ignore */ }
+  if (order?.order_no) {
+    state.mine = rememberOrder(state.mine, order);
+    writeJson(ORDERS_KEY, state.mine);
+  }
 }
 
 function loadThanks() {
@@ -179,12 +187,13 @@ function pageTitle() {
     const product = findProduct(route.code);
     return product ? `${product.title} · KOMBI Sklep` : 'Produkt · KOMBI Sklep';
   }
+  if (route.name === 'orders') return 'Moje zamówienia · KOMBI Sklep';
   return 'KOMBI Sklep';
 }
 
 function shell() {
   const body = mainView();
-  return `${topbar()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
+  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
 }
 
 function topbar() {
@@ -198,6 +207,7 @@ function topbar() {
 
 function footer() {
   return `<footer class="footer">
+    <a href="#/moje">Moje zamówienia</a>
     <a href="regulamin.html">Regulamin</a>
     <button type="button" data-act="reload">Odśwież</button>
     <a href="admin.html">Panel</a>
@@ -213,12 +223,15 @@ function mainView() {
   if (route.name === 'product') return productMain(route.code);
   if (route.name === 'basket') return basketMain();
   if (route.name === 'checkout') return checkoutMain();
+  if (route.name === 'orders') return ordersMain();
   return catalogMain();
 }
 
 function catalogMain() {
   return `<main>
     <h1>Produkty</h1>
+    <button type="button" class="btn luck" data-act="luck">${esc(LUCKY_LABEL)}</button>
+    <p id="slogan" class="slogan" hidden></p>
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
     <p id="result-note" class="hint">${esc(resultNoteText())}</p>
     <div id="grid" class="grid">${gridHtml()}</div>
@@ -288,8 +301,13 @@ function productMain(code) {
       </div>
       <button type="button" class="btn primary block" data-act="add">Dodaj do koszyka</button>`;
   const desc = String(product.description || '').trim();
+  const film = videoSrc(product.video_url);
+  const video = film
+    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+    : '';
   return `<main>
     <p><a class="back" href="#/">← Sklep</a></p>
+    ${video}
     <div class="gal-wrap">
       <div class="gallery" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
       ${nav}
@@ -436,8 +454,45 @@ function thanksMain(order) {
     <p class="orderno" id="orderno">${esc(order.order_no)}</p>
     <p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(order.order_no)}">Kopiuj numer</button></p>
     <div class="paybox">${rows}</div>
+    ${proofBox(order.order_no, order.phone)}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
+  </main>`;
+}
+
+function proofBox(orderNo, phone) {
+  const note = state.proofNote[orderNo];
+  const busy = state.proofBusy === orderNo;
+  const done = note?.ok ? `<p class="note-box" role="status">${esc(PROOF_OK)}</p>` : '';
+  const err = note && !note.ok ? `<p class="alert" role="alert">${esc(note.message || '')}</p>` : '';
+  return `<section class="proof">
+    <p class="pay-window">${esc(PAY_WINDOW)}</p>
+    ${done}
+    ${err}
+    <p class="group-label">${esc(PROOF_LABEL)}</p>
+    <label class="file">Aparat
+      <input type="file" accept="image/*" capture="environment" data-proof="1" data-order="${esc(orderNo)}" data-phone="${esc(phone || '')}" ${busy ? 'disabled' : ''}>
+    </label>
+    <label class="file">Plik
+      <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,.heic,.jpg,.jpeg,.png,.webp,application/pdf,.pdf" data-proof="1" data-order="${esc(orderNo)}" data-phone="${esc(phone || '')}" ${busy ? 'disabled' : ''}>
+    </label>
+  </section>`;
+}
+
+function ordersMain() {
+  const cards = state.mine.map((order) => `<article class="order">
+      <header><strong class="price">${esc(order.order_no)}</strong></header>
+      ${proofBox(order.order_no, order.phone)}
+    </article>`).join('');
+  return `<main>
+    <h1>Moje zamówienia</h1>
+    <p class="hint">Numer i telefon zostają w tym telefonie, żeby dołączyć potwierdzenie.</p>
+    <form id="find-order">
+      ${field('find-no', 'Numer zamówienia', '', 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="20"')}
+      ${field('find-phone', 'Telefon', '', 'tel', '', 'inputmode="tel" autocomplete="tel"')}
+      <button type="submit" class="btn">Pokaż zamówienie</button>
+    </form>
+    ${cards || '<p>Nie ma tu jeszcze zamówień z tego telefonu.</p>'}
   </main>`;
 }
 
@@ -560,6 +615,7 @@ async function placeOrder(form) {
           to_pay_now: body.to_pay_now,
           cod_amount: body.cod_amount,
           payment: payload.payment,
+          phone: payload.phone,
         });
         setBasket([]);
         saveDraft({ ...state.draft, note: '', terms: false });
@@ -608,6 +664,16 @@ function onClick(event) {
   if (!target) return;
   const act = target.dataset.act;
   if (act === 'reload') { loadProducts(); return; }
+  if (act === 'luck') {
+    const el = document.getElementById('slogan');
+    if (!el) return;
+    el.textContent = pickSlogan();
+    el.hidden = false;
+    el.classList.remove('pop');
+    void el.offsetWidth;
+    el.classList.add('pop');
+    return;
+  }
   if (act === 'gal') { scrollGallery(Number(target.dataset.dir) || 1); return; }
   if (act === 'dot') {
     const gallery = document.getElementById('gallery');
@@ -671,7 +737,14 @@ function onInput(event) {
 }
 
 function onChange(event) {
-  const form = event.target.form;
+  const input = event.target;
+  if (input?.dataset?.proof) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (file) sendProof(input.dataset.order, input.dataset.phone, file);
+    return;
+  }
+  const form = input.form;
   if (!form || form.id !== 'checkout') return;
   saveDraft(readCheckout(form));
   syncChoices();
@@ -679,9 +752,69 @@ function onChange(event) {
 
 function onSubmit(event) {
   const form = event.target;
+  if (form.id === 'find-order') {
+    event.preventDefault();
+    const orderNo = String(form.elements.namedItem('find-no')?.value || '').trim();
+    const phone = String(form.elements.namedItem('find-phone')?.value || '');
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(orderNo) || !phoneOk(phone)) {
+      toast('Podaj numer zamówienia i telefon — 9 cyfr.');
+      return;
+    }
+    state.mine = rememberOrder(state.mine, { order_no: orderNo, phone, at: new Date().toISOString() });
+    writeJson(ORDERS_KEY, state.mine);
+    form.reset();
+    paint({ keep: true });
+    return;
+  }
   if (form.id !== 'checkout') return;
   event.preventDefault();
   placeOrder(form);
+}
+
+async function sendProof(orderNo, phone, file) {
+  if (state.proofBusy) return;
+  const kind = proofKind(file);
+  if (!kind) {
+    state.proofNote[orderNo] = { ok: false, message: 'Wybierz zdjęcie JPG, PNG, WEBP, HEIC albo PDF.' };
+    paint({ keep: true });
+    return;
+  }
+  if (file.size > PROOF_MAX_BYTES) {
+    state.proofNote[orderNo] = { ok: false, message: 'Plik jest za duży. Maksymalnie 5 MB.' };
+    paint({ keep: true });
+    return;
+  }
+  if (!phoneOk(phone)) {
+    state.proofNote[orderNo] = { ok: false, message: 'Numer telefonu nie pasuje do zamówienia.' };
+    paint({ keep: true });
+    return;
+  }
+  const path = proofObjectPath(orderNo, kind.ext, crypto.randomUUID());
+  if (!path) {
+    state.proofNote[orderNo] = { ok: false, message: 'Nie udało się zapisać ścieżki potwierdzenia.' };
+    paint({ keep: true });
+    return;
+  }
+  state.proofBusy = orderNo;
+  paint({ keep: true });
+  try {
+    const uploaded = await sb.storage.from('shop-proofs').upload(path, file, {
+      contentType: kind.contentType,
+      upsert: false,
+    });
+    if (uploaded.error) throw uploaded.error;
+    const { data, error } = await sb.rpc('shop_attach_proof', {
+      p_order_no: orderNo,
+      p_phone: normalizePhone(phone),
+      p_path: path,
+    });
+    if (error) throw error;
+    state.proofNote[orderNo] = mapProofResult(data);
+  } catch {
+    state.proofNote[orderNo] = { ok: false, message: 'Nie udało się wysłać potwierdzenia. Spróbuj jeszcze raz.' };
+  }
+  state.proofBusy = '';
+  paint({ keep: true });
 }
 
 export async function copyText(text) {
@@ -745,6 +878,9 @@ async function loadProducts() {
 
 function start() {
   state.basket = sanitizeBasket(readJson(BASKET_KEY, []));
+  const storedMine = readJson(ORDERS_KEY, []);
+  const storedRows = Array.isArray(storedMine) ? storedMine : [];
+  state.mine = storedRows.slice().reverse().reduce((list, row) => rememberOrder(list, row), []);
   const storedDraft = readJson(DRAFT_KEY, {});
   state.draft = { ...emptyDraft(), ...(storedDraft && typeof storedDraft === 'object' ? storedDraft : {}) };
   state.thanks = loadThanks();

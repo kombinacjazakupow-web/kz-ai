@@ -14,6 +14,22 @@ export const TRANSFER_COPY = 'PL24 2910 0006 0000 0000 0571 2568';
 export const BASKET_KEY = 'kombi-shop-basket';
 export const DRAFT_KEY = 'kombi-shop-draft';
 export const THANKS_KEY = 'kombi-shop-thanks';
+export const ORDERS_KEY = 'kombi-shop-orders';
+export const LAUNCH_BANNER = '04.11.2026 \u2013 startujemy z nasz\u0105 pierwsz\u0105 aplikacj\u0105! \u{1F389} Ceny startowe dla pierwszych zam\u00f3wie\u0144 w aplikacji.';
+export const PAY_WINDOW = 'Zap\u0142a\u0107 w ci\u0105gu 1 godziny i do\u0142\u0105cz potwierdzenie';
+export const PROOF_LABEL = 'Do\u0142\u0105cz potwierdzenie p\u0142atno\u015bci';
+export const PROOF_OK = 'Potwierdzenie wys\u0142ane \u2705 \u2013 sprawdzimy i potwierdzimy';
+export const LUCKY_LABEL = 'Wylosuj swoje szcz\u0119\u015bcie \u{1F340}';
+export const PROOF_MAX_BYTES = 5 * 1024 * 1024;
+export const SLOGANS = [
+  'Kombi szansa',
+  'Elastyczne erotyczne',
+  'Ca\u0142ujemy od wsz\u0119dzie',
+  'Aide Dziewczyny',
+  'Co robili\u015bcie dzisiaj, z kim zrobili\u015bcie, dlaczego zrobili\u015bcie, ale najwa\u017cniejsze \u2013 czy to dobrze zrobili\u015bcie?',
+  'To kosztuje 1599 z\u0142 dla innych, a dla ciebie tylko 29',
+  'Bia\u0142uszka, Be\u017coweszka, Granatuszka \u2013 ooo zajebuszka',
+];
 
 export const ORDER_STATUS = {
   new: 'Nowe',
@@ -69,6 +85,81 @@ export function photoUrl(path) {
   return `${SUPABASE_URL}/storage/v1/object/public/shop-photos/${encoded}`;
 }
 
+const PROOF_TYPES = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  pdf: 'application/pdf',
+};
+
+export function videoSrc(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https:\/\/[^\s"'<>]+$/i.test(raw)) return raw;
+  return photoUrl(raw);
+}
+
+export function proofKind(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  let ext = '';
+  if (type === 'image/jpeg') ext = 'jpg';
+  else if (type === 'image/png') ext = 'png';
+  else if (type === 'image/webp') ext = 'webp';
+  else if (type === 'image/heic' || type === 'image/heif') ext = 'heic';
+  else if (type === 'application/pdf') ext = 'pdf';
+  else {
+    const match = name.match(/\.([a-z0-9]+)$/);
+    ext = match ? match[1] : '';
+    if (ext === 'jpeg') ext = 'jpg';
+  }
+  if (!PROOF_TYPES[ext]) return null;
+  return { ext, contentType: PROOF_TYPES[ext] };
+}
+
+export function proofObjectPath(orderNo, ext, id) {
+  const no = String(orderNo || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(no)) return '';
+  if (!PROOF_TYPES[ext]) return '';
+  if (!UUID_RE.test(String(id || ''))) return '';
+  return `${no}/${id}.${ext}`;
+}
+
+export function mapProofResult(data) {
+  let code = data;
+  if (code && typeof code === 'object') {
+    if ('shop_attach_proof' in code) code = code.shop_attach_proof;
+    else if ('error' in code) code = code.error;
+    else {
+      const values = Object.values(code);
+      code = values.length === 1 ? values[0] : '';
+    }
+  }
+  code = String(code ?? '').trim();
+  if (code === 'ok') return { ok: true, message: PROOF_OK };
+  const table = {
+    no_order: 'Nie ma zamówienia o tym numerze.',
+    phone: 'Numer telefonu nie pasuje do zamówienia.',
+    path: 'Nie udało się zapisać ścieżki potwierdzenia.',
+  };
+  return { ok: false, message: table[code] || 'Nie udało się wysłać potwierdzenia. Spróbuj jeszcze raz.' };
+}
+
+export function pickSlogan(random = Math.random) {
+  const index = Math.floor(Number(random()) * SLOGANS.length);
+  return SLOGANS[Math.min(SLOGANS.length - 1, Math.max(0, index))];
+}
+
+export function rememberOrder(list, order) {
+  const orderNo = String(order?.order_no || '').trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(orderNo)) return Array.isArray(list) ? list.slice(0, 20) : [];
+  const phone = normalizePhone(order?.phone || '');
+  const next = (Array.isArray(list) ? list : []).filter((row) => row?.order_no !== orderNo);
+  next.unshift({ order_no: orderNo, phone, at: String(order?.at || '') });
+  return next.slice(0, 20);
+}
+
 export function splitList(text) {
   return String(text || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
@@ -114,6 +205,7 @@ export function parseRoute(hash) {
   if (clean === '/') return { name: 'catalog' };
   if (clean === '/koszyk') return { name: 'basket' };
   if (clean === '/zamowienie') return { name: 'checkout' };
+  if (clean === '/moje') return { name: 'orders' };
   const match = clean.match(/^\/p\/([^/]+)$/);
   if (!match) return { name: 'catalog' };
   let code = match[1];
