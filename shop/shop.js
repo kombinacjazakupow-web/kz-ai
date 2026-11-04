@@ -3,7 +3,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
@@ -11,6 +11,7 @@ import {
 import {
   cleanVariants, colorViews, freshBadge, isSoldOut, orderCatalog, stockForColor, variantError,
 } from './variants.js';
+import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
@@ -139,12 +140,15 @@ function letter(title) {
   return ch || '·';
 }
 
-function thumbHtml(path, alt, eager) {
-  const url = photoUrl(path);
-  if (!url) return `<span class="ph" aria-hidden="true">${esc(letter(alt))}</span>`;
+function thumbHtml(path, alt, eager, width) {
+  const full = photoSrc(path, width || (eager ? 800 : 400));
+  const tiny = photoSrc(path, 32);
+  if (!full) return `<span class="ph" aria-hidden="true">${esc(letter(alt))}</span>`;
   const loading = eager ? 'eager' : 'lazy';
   const priority = eager ? ' fetchpriority="high"' : '';
-  return `<img src="${esc(url)}" alt="${esc(alt)}" loading="${loading}" decoding="async"${priority} referrerpolicy="no-referrer">`;
+  return `<span class="blurup"${tiny ? ` style="background-image:url('${esc(tiny)}')"` : ''}>
+    <img src="${esc(full)}" alt="${esc(alt)}" loading="${loading}" decoding="async"${priority} data-fallback="${esc(photoUrl(path))}" referrerpolicy="no-referrer">
+  </span>`;
 }
 
 function pricedLines() {
@@ -269,13 +273,51 @@ function mainView() {
 
 function catalogMain() {
   return `<main>
-    <h1>Produkty</h1>
+    ${heroHtml()}
+    ${railHtml()}
+    <h2 id="kolekcja">Kolekcja</h2>
     <button type="button" class="btn luck" data-act="luck">${esc(LUCKY_LABEL)}</button>
     <p id="slogan" class="slogan" hidden></p>
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
     <p id="result-note" class="hint">${esc(resultNoteText())}</p>
     <div id="grid" class="grid">${gridHtml()}</div>
   </main>`;
+}
+
+function heroHtml() {
+  const product = newestDrop(state.products, state.variants);
+  if (!product) return '';
+  const film = videoSrc(product.video_url);
+  const media = film
+    ? `<video class="hero-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+    : `<div class="hero-photo">${thumbHtml(photoList(product)[0], product.title || 'Nowość', true, 800)}</div>`;
+  return `<section class="hero">
+    ${media}
+    <p class="eyebrow">NOWOŚCI JUŻ SĄ</p>
+    <h1>${esc(product.title || 'Nowości')}</h1>
+    <p class="price">${esc(formatZl(product.price))}</p>
+    <button type="button" class="btn primary" data-act="kolekcja">Zobacz kolekcję</button>
+  </section>`;
+}
+
+function railHtml() {
+  const list = dropRail(state.products, state.variants);
+  if (!list.length) return '';
+  const cards = list.map((product) => {
+    const code = encodeURIComponent(String(product.code || ''));
+    return `<a class="rail-card" href="#/p/${code}">
+      <span class="thumb">${thumbHtml(photoList(product)[0], product.title || 'Produkt', false, 400)}</span>
+      <span class="card-title">${esc(product.title || 'Produkt')}</span>
+      <span class="price">${esc(formatZl(product.price))}</span>
+    </a>`;
+  }).join('');
+  return `<section class="rail" aria-label="Drop dnia"><h2>Drop dnia</h2><div class="rail-row">${cards}</div></section>`;
+}
+
+function dotHtml(product) {
+  const dots = visibleDots(colorViews(product, state.variants));
+  if (!dots.length) return '';
+  return `<span class="dots-row">${dots.map((view) => `<i class="dot" style="background:${esc(dotPaint(view.name))}" title="${esc(view.name)}"></i>`).join('')}</span>`;
 }
 
 function resultNoteText() {
@@ -298,6 +340,7 @@ function gridHtml() {
     return `<a class="card${sold ? ' sold' : ''}" href="#/p/${code}">
       <span class="thumb">${thumbHtml(photoList(product)[0], product.title || 'Produkt', index < 2)}${badgeHtml}</span>
       <span class="card-title">${esc(product.title || 'Produkt')}</span>
+      ${dotHtml(product)}
       <span class="price">${esc(formatZl(product.price))}</span>
     </a>`;
   }).join('');
@@ -775,6 +818,13 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
+  document.querySelectorAll('img[data-fallback]').forEach((img) => {
+    img.addEventListener('load', () => img.classList.add('in'));
+    img.addEventListener('error', () => {
+      const fallback = img.dataset.fallback || '';
+      if (fallback && img.src !== fallback) img.src = fallback;
+    }, { once: true });
+  });
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
   if (!gallery || !dots) return;
@@ -947,6 +997,10 @@ function onClick(event) {
   if (!target) return;
   const act = target.dataset.act;
   if (act === 'reload') { loadProducts(); return; }
+  if (act === 'kolekcja') {
+    document.getElementById('kolekcja')?.scrollIntoView({ block: 'start' });
+    return;
+  }
   if (act === 'luck') {
     const el = document.getElementById('slogan');
     if (!el) return;
