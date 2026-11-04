@@ -4,7 +4,7 @@ Public, mobile-first shop for Kombinacja Zakupów. Plain HTML, CSS, and ES modul
 
 The screen is in Polish. Visitors browse active products, keep a basket in `localStorage`, and place an order only through the `shop_place_order` database function. The amount to pay is the one that function returns. The basket total is a preview, plus the line `Dostawa DPD 25 zł`.
 
-The packing app (`index.html`, `app.js`, `styles.css`, `sw.js`) is a separate tool. This folder does not change it. The packing service worker, once installed, uses the site root as its scope, so it can also see `/shop/` requests. It tries the network first. This shop does not register its own worker.
+The packing app lives in `/pakowanie/` and its service worker scope is `/pakowanie/`. This shop registers `shop/sw.js` with scope `/shop/`. The site root redirects here, unless the link still has a packing hash, which goes to `/pakowanie/` with that hash.
 
 ## Run locally
 

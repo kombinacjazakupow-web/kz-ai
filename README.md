@@ -12,7 +12,7 @@ ES modules and the service worker need HTTP. Do not open `index.html` as a file.
 python3 -m http.server 8080
 ```
 
-Open http://localhost:8080 on a phone or in a narrow browser window.
+Open http://localhost:8080/pakowanie/ on a phone or in a narrow browser window. The site root opens the shop.
 
 ## GitHub Pages
 
@@ -20,11 +20,9 @@ Open http://localhost:8080 on a phone or in a narrow browser window.
 2. Open **Settings → Pages**.
 3. **Build and deployment**: Deploy from a branch.
 4. Branch: `main` (or the branch you ship), folder: **`/ (root)`**. Save.
-5. Wait until the site is live. The address is `https://<user>.github.io/kz-ai/` for this repo name.
-6. In Supabase → **Authentication → URL configuration**, set:
-   - Site URL: `https://<user>.github.io/kz-ai/`
-   - Redirect URLs: `https://<user>.github.io/kz-ai/` and `https://<user>.github.io/kz-ai/index.html`
-7. Google sign-in must already be enabled on that Supabase project. Supabase’s own callback URL is what Google sees; the app only redirects back to the Pages URL above.
+5. Wait until the site is live. Packing is at `https://<user>.github.io/kz-ai/pakowanie/`. The repository root opens the shop.
+6. In Supabase → **Authentication → URL configuration**, the app sends people back to `location.origin + location.pathname`. Allow the packing page on each host you use, for example `https://<user>.github.io/kz-ai/pakowanie/` and `https://<user>.github.io/kz-ai/pakowanie/index.html`. Do not add a `CNAME` file or a GitHub Pages custom domain until DNS for the new domain is live.
+7. Google sign-in must already be enabled on that Supabase project. Supabase’s own callback URL is what Google sees; the app only redirects back to the current packing page.
 
 `.nojekyll` is in the repo so Pages serves the files without Jekyll.
 

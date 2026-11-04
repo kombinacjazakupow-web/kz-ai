@@ -1,4 +1,4 @@
-// Shop shell only. The packing app keeps its own sw.js at the site root.
+// Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
 const CACHE = 'kombi-sklep-shell-v1';
 const SHELL = [
   './',
