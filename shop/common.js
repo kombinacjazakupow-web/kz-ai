@@ -5,7 +5,7 @@ export const SUPABASE_KEY = 'sb_publishable_pIiSGwIiJJmkNsvlZyniAw_6CQ1FlpF';
 export const DELIVERY_FEE = 25;
 export const DELIVERY_LABEL = 'Dostawa DPD 25 zł';
 export const COD_NOTE = 'Pobranie — wpłacasz teraz tylko 28 zł, resztę kurierowi.';
-export const MESSENGER_LINE = 'Po wpłacie wyślij potwierdzenie na Messenger Kombinacja Zakupów';
+export const MESSENGER_LINE = 'Dołącz potwierdzenie powyżej (najszybciej). Pytania: WhatsApp +48 792 402 881.';
 export const BLIK_LINE = 'BLIK na telefon: 796 669 157 (Fikrie Ali)';
 export const TRANSFER_LINE = 'Przelew: PL24 2910 0006 0000 0000 0571 2568 (Sergen Kushdan)';
 export const BLIK_COPY = '796 669 157';
@@ -162,6 +162,20 @@ export function rememberOrder(list, order) {
 
 export function splitList(text) {
   return String(text || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+export function settleOption(options, current) {
+  const list = Array.isArray(options) ? options : [];
+  if (list.length === 1) return list[0];
+  return current && list.includes(current) ? current : '';
+}
+
+export function chooseOption(current, value, options) {
+  const list = Array.isArray(options) ? options : [];
+  if (list.length === 1) return list[0];
+  const next = String(value || '');
+  if (!next || !list.includes(next)) return settleOption(list, current);
+  return current === next ? '' : next;
 }
 
 export function normalizeList(text) {
