@@ -567,6 +567,8 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
   margin: 8px 0 16px;
   box-shadow: var(--shadow) 0 1px 3px;
 }
+.remembered { display: flex; flex-direction: column; gap: 8px; }
+.remembered .btn { align-self: flex-start; min-height: var(--tap); }
 .proof .note-box { background: #f3f1ff; }
 .problem { outline: 2px solid var(--ruby); }
 
