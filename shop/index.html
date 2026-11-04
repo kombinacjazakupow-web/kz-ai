@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#141414">
+  <meta name="description" content="KOMBI Sklep — ubrania z dostawą DPD. Płatność BLIK, przelew albo pobranie.">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="KOMBI">
+  <title>KOMBI Sklep</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="shop.css">
+  <link rel="preconnect" href="https://ghhatjkcgilnruluhxyr.supabase.co" crossorigin>
+</head>
+<body>
+  <div id="app" class="sheet">
+    <main class="center"><p>Ładowanie…</p></main>
+  </div>
+  <noscript><p class="noscript">Włącz JavaScript, żeby otworzyć sklep.</p></noscript>
+  <script type="module">
+    import('./shop.js').catch(() => {
+      const el = document.getElementById('app');
+      if (el) el.textContent = 'Nie udało się załadować sklepu. Sprawdź połączenie i odśwież.';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#141414">
+  <meta name="robots" content="noindex">
+  <meta name="description" content="Panel właściciela sklepu KOMBI.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Panel · KOMBI Sklep</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="shop.css">
+  <link rel="preconnect" href="https://ghhatjkcgilnruluhxyr.supabase.co" crossorigin>
+</head>
+<body>
+  <div id="admin" class="sheet">
+    <main class="center"><p>Ładowanie…</p></main>
+  </div>
+  <noscript><p class="noscript">Włącz JavaScript, żeby otworzyć panel.</p></noscript>
+  <script type="module">
+    import('./admin.js').catch(() => {
+      const el = document.getElementById('admin');
+      if (el) el.textContent = 'Nie udało się załadować panelu. Sprawdź połączenie i odśwież.';
+    });
+  </script>
+</body>
+</html>
