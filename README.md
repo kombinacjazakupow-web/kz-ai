@@ -41,6 +41,14 @@ After Google login the app reads that person’s row in `pak_users` (the id is t
 
 Approving a report only marks it approved or rejected. It does not edit the bag. The same decisions can arrive from Telegram.
 
+## Photos
+
+**Zdjęcia** sits between **Wieszak** and **Właściciel**. Proof photos hang off a bag (`Zdjęcie worka`) or off one NEW/OLD line. Product photos hang off a live day and a hanger number together — the same number on another day is a different product. A line's thumbnail is the newest product photo for that day and number.
+
+The phone camera (`accept=image/*`, `capture=environment`) resizes the picture in the browser first: long side 1280 px, JPEG quality 0.8, EXIF orientation kept. The file goes to the private Storage bucket `pak-photos`. The app inserts `pak_photos` only after that upload succeeds, with `user_id` set to the signed-in user. Paths are `proof/<bag_no>/<id>.jpg` and `product/<live day, dots replaced with dashes>/<hanger_no>/<id>.jpg`.
+
+Signed image URLs last one hour and stay in memory until they expire. `pak_photos` uses the same realtime channel as the other tables. Photos do not change bags, lines, or ticks, and they are allowed when a bag is locked or already done. There is no offline queue: if the upload fails, the toast says the picture was not saved. Deleting removes the storage object first, then the row. Only the person who took the photo sees **Usuń zdjęcie**, and the confirmation stays on the page.
+
 ## Offline
 
 The service worker caches the app shell and loads it from the network first, so a new deploy shows up when the phone is online. Supabase calls are network-first and are not stored in the cache.

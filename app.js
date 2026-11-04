@@ -1,4 +1,11 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import {
+  MSG_FAIL, MSG_SAVED, MSG_SENDING,
+  bagProofHtml, buildPhotoRow, cachedSigned, clearSigned, dropSigned,
+  itemProofHtml, latestDayPhotos, missingHangers, photoStamp, photosPageHtml,
+  productPhotosFor, productThumbHtml, proofForBag, proofForItem, resizeToJpeg,
+  signPaths, todayLabel, viewerHtml, withTodayFirst,
+} from './photos.js';
 const SUPABASE_URL = 'https://ghhatjkcgilnruluhxyr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_pIiSGwIiJJmkNsvlZyniAw_6CQ1FlpF';
 const QUEUE_KEY = 'kombi-tick-queue';
@@ -20,13 +27,15 @@ const GROUPS = [
   ['REMOVE', 'WYJMIJ', 'g-remove'], ['HOLD', 'NIE PAKUJ', 'g-hold'],
 ];
 const state = {
-  session: null, me: null, screen: 'boot', bags: [], items: [], ticks: [], users: [], requests: [],
+  session: null, me: null, screen: 'boot', bags: [], items: [], ticks: [], users: [], requests: [], photos: [],
   filter: 'todo', query: '', bagNo: null, bagLocked: false, lockMsg: '', lockChecked: '', missingIds: [],
-  pickerDay: '', pickerNo: '', report: blankReport(), menu: false, busy: false, error: '', loginError: '',
+  pickerDay: '', pickerNo: '', photoDay: '', photoNo: '', photoBusy: false, viewer: null,
+  report: blankReport(), menu: false, busy: false, error: '', loginError: '',
 };
 const inflight = { inserts: [], deletes: [] };
 let lockToken = 0, authGen = 0, painted = '';
-let channelsReady = false, meWatch = false;
+let channelsReady = false, meWatch = false, signGen = 0;
+let pendingShot = null;
 
 function blankReport() {
   return { itemId: '', field: 'missing', newValue: '', why: '' };
@@ -229,13 +238,13 @@ function paintBanner() {
   el.hidden = !on;
   if (on) el.textContent = 'offline – zapisane w telefonie';
 }
-function toast(msg) {
+function toast(msg, ms = 4600) {
   let el = document.getElementById('toast');
   if (!el) return;
   el.textContent = msg;
   el.hidden = false;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => { el.hidden = true; }, 4600);
+  toast._t = setTimeout(() => { el.hidden = true; }, ms);
 }
 function bagBy(no) {
   return state.bags.find((b) => b.bag_no === no) || null;
@@ -249,17 +258,20 @@ function giftText(g) {
 }
 
 async function loadCore() {
-  const [bags, items, ticks, users] = await Promise.all([
+  const [bags, items, ticks, users, photos] = await Promise.all([
     sb.from('pak_bags').select('*'),
     sb.from('pak_items').select('*'),
     sb.from('pak_ticks').select('*'),
     sb.from('pak_users').select('id,name,email,role,status'),
+    sb.from('pak_photos').select('*'),
   ]);
   if (bags.error) throw bags.error;
   if (items.error) throw items.error;
   if (ticks.error) throw ticks.error;
+  if (photos.error) throw photos.error;
   state.bags = bags.data || [];
   state.items = items.data || [];
+  state.photos = photos.data || [];
   applyServerTicks(ticks.data || []);
   if (!users.error && users.data) state.users = users.data;
   else if (state.me && !state.users.some((u) => u.id === state.me.id)) state.users.push(state.me);
@@ -283,6 +295,10 @@ async function reloadTable(table) {
     else if (table === 'pak_ticks') applyServerTicks(data);
     else if (table === 'pak_change_requests') state.requests = data;
     else if (table === 'pak_users') state.users = data;
+    else if (table === 'pak_photos') {
+      state.photos = data;
+      syncViewer();
+    }
   }
   render();
 }
@@ -290,7 +306,7 @@ function subscribe() {
   if (channelsReady || !state.session) return;
   channelsReady = true;
   const ch = sb.channel('pak-live');
-  for (const table of ['pak_bags', 'pak_items', 'pak_ticks', 'pak_change_requests', 'pak_users']) {
+  for (const table of ['pak_bags', 'pak_items', 'pak_ticks', 'pak_change_requests', 'pak_users', 'pak_photos']) {
     ch.on('postgres_changes', { event: '*', schema: 'public', table }, () => scheduleReload(table));
   }
   ch.subscribe();
@@ -373,6 +389,7 @@ function route() {
   if (!state.me || state.me.status !== 'approved') return;
   const h = location.hash.replace(/^#/, '');
   state.menu = false;
+  state.viewer = null;
   if (h.startsWith('/bag/')) {
     const no = decodeURIComponent(h.slice(5));
     if (state.screen === 'bag' && state.bagNo === no && state.lockChecked === no) render();
@@ -388,7 +405,7 @@ function route() {
     return;
   }
   if (h === '/owner' && state.me.role !== 'owner') { location.hash = '#/'; return; }
-  state.screen = h === '/picker' ? 'picker' : h === '/owner' ? 'owner' : 'bags';
+  state.screen = h === '/picker' ? 'picker' : h === '/photos' ? 'photos' : h === '/owner' ? 'owner' : 'bags';
   if (state.screen === 'owner') { scheduleReload('pak_users'); scheduleReload('pak_change_requests'); }
   render();
 }
@@ -591,6 +608,12 @@ async function onRefresh() {
 }
 async function logout() {
   state.menu = false;
+  state.viewer = null;
+  state.photos = [];
+  state.photoBusy = false;
+  state.photoDay = '';
+  state.photoNo = '';
+  clearSigned();
   channelsReady = false;
   meWatch = false;
   try { await sb.removeAllChannels(); } catch { /* already gone */ }
@@ -617,12 +640,13 @@ async function login() {
 function render() {
   const root = document.getElementById('app');
   if (!root) return;
+  prepareViewer();
   const key = `${state.screen}:${state.bagNo || ''}`;
   const reset = key !== painted;
   painted = key;
   const y = reset ? 0 : window.scrollY;
   const active = document.activeElement;
-  const focusId = active && active.id ? active.id : '';
+  const focusId = active && active.id && active.id !== 'cam-file' ? active.id : '';
   const pos = active && typeof active.selectionStart === 'number' ? active.selectionStart : null;
   root.innerHTML = shell();
   paintBanner();
@@ -636,6 +660,9 @@ function render() {
     }
   }
   window.scrollTo(0, y);
+  document.body.style.overflow = state.viewer ? 'hidden' : '';
+  paintSigned();
+  bindViewer();
 }
 function shell() {
   if (state.screen === 'boot') return '<main class="center"><p>Ładowanie…</p></main>';
@@ -649,15 +676,17 @@ function shell() {
   if (state.screen === 'bag') body = bagView();
   else if (state.screen === 'report') body = reportView();
   else if (state.screen === 'picker') body = pickerView();
+  else if (state.screen === 'photos') body = photosView();
   else if (state.screen === 'owner') body = ownerView();
   const tabs = state.screen === 'bag' || state.screen === 'report' ? '' : tabbar();
   const foot = state.screen === 'bag' ? bagFoot() : '';
-  return `${topbar()}${banner}${body}${foot}${tabs}${menuSheet()}<div id="toast" class="toast" role="status" hidden></div>`;
+  return `${topbar()}${banner}${body}${foot}${tabs}${menuSheet()}${viewerBlock()}<div id="toast" class="toast" role="status" hidden></div>`;
 }
 function topbar() {
   const back = state.screen === 'bag' || state.screen === 'report';
   let mid = '<div class="bar-mid"><b>KOMBI</b><small>Pakowanie</small></div>';
   if (state.screen === 'picker') mid = '<div class="bar-mid"><b>Wieszak</b></div>';
+  if (state.screen === 'photos') mid = '<div class="bar-mid"><b>Zdjęcia</b></div>';
   if (state.screen === 'owner') mid = '<div class="bar-mid"><b>Właściciel</b></div>';
   if (state.screen === 'report') mid = '<div class="bar-mid"><b>Zgłoś błąd</b></div>';
   if (state.screen === 'bag') {
@@ -688,7 +717,7 @@ function tabbar() {
     return `<button type="button" class="tab${on ? ' on' : ''}" data-act="nav" data-to="${id}" ${on ? 'aria-current="page"' : ''}>${label}</button>`;
   };
   const owner = state.me?.role === 'owner' ? tab('owner', 'Właściciel') : '';
-  return `<nav class="tabs">${tab('bags', 'Worki')}${tab('picker', 'Wieszak')}${owner}</nav>`;
+  return `<nav class="tabs">${tab('bags', 'Worki')}${tab('picker', 'Wieszak')}${tab('photos', 'Zdjęcia')}${owner}</nav>`;
 }
 function bagListHtml() {
   const bags = visibleBags(state.bags, state.items, state.ticks, state.me?.id, state.filter, state.query);
@@ -734,6 +763,7 @@ function bagView() {
     `<p class="wno">${esc(bagLabel(bag.bag_no))}</p>`,
     `<p class="client">${esc(bag.client_name || '—')}</p>`,
     `<p class="band ${esc(meta.cls)}">${esc(meta.label)}</p>`,
+    bagProofHtml(bag.bag_no, state.photos),
     gifts ? `<p class="gifts">🎁 ${esc(gifts)}</p>` : '',
     bag.note ? `<p class="note"><b>Notatka.</b> ${esc(bag.note)}</p>` : '',
     `<p class="totals">W worku: <b>${tot.pieces} szt</b> · <b>${pln(tot.money)}</b></p>`,
@@ -757,11 +787,12 @@ function rowHtml(it, edit) {
   } else if (tickable && on) {
     btn = '<span class="tick on" aria-hidden="true">✓</span>';
   }
+  const cams = tickable ? itemProofHtml(it, state.photos) : '';
   const day = it.live_day ? `<span class="day">${esc(it.live_day)}</span>` : '';
   const who = on && tick.user_id !== state.me?.id ? `<div class="by">odhaczone: ${esc(userName(tick.user_id))}</div>` : '';
   const miss = state.missingIds.includes(it.id) ? ' miss' : '';
   const struck = it.state === 'HOLD' ? ' struck' : '';
-  return `<article class="row${miss}${struck}">${btn}<div><div class="line1">${day}<span class="hanger">${esc(it.hanger_no || '—')}</span></div><div class="pname">${esc(it.product_name || '—')}</div><div class="meta">${esc(String(it.qty ?? 0))} szt · ${pln(it.price)}</div>${who}</div></article>`;
+  return `<article class="row${miss}${struck}">${productThumbHtml(it, state.photos)}<div class="rowtools">${btn}${cams}</div><div><div class="line1">${day}<span class="hanger">${esc(it.hanger_no || '—')}</span></div><div class="pname">${esc(it.product_name || '—')}</div><div class="meta">${esc(String(it.qty ?? 0))} szt · ${pln(it.price)}</div>${who}</div></article>`;
 }
 function bagFoot() {
   const bag = bagBy(state.bagNo);
@@ -795,7 +826,21 @@ function pickRow(it) {
     ? `<button type="button" class="tick${on ? ' on' : ''}" data-act="tick" data-id="${esc(it.id)}" aria-pressed="${on}" aria-label="${on ? 'Cofnij odhaczenie' : 'Odhacz'}">${on ? '✓' : ''}</button>`
     : '<span class="tick ghost"></span>';
   const tag = GROUPS.find((g) => g[0] === it.state);
-  return `<article class="row">${btn}<div><div class="line1"><button type="button" class="link" data-act="open" data-bag="${esc(it.bag_no)}">${esc(bagLabel(it.bag_no))}</button>${meta.label ? `<span class="pill ${esc(meta.cls)}">${esc(meta.label)}</span>` : ''}</div><div class="pname">${esc(bag?.client_name || '')}</div><div class="pname">${esc(it.product_name || '—')}</div><div class="meta">${esc(it.live_day || '')} · ${esc(String(it.qty ?? 0))} szt · ${pln(it.price)}${tag && !tickable ? ` · ${tag[1]}` : ''}</div></div></article>`;
+  return `<article class="row">${productThumbHtml(it, state.photos)}${btn}<div><div class="line1"><button type="button" class="link" data-act="open" data-bag="${esc(it.bag_no)}">${esc(bagLabel(it.bag_no))}</button>${meta.label ? `<span class="pill ${esc(meta.cls)}">${esc(meta.label)}</span>` : ''}</div><div class="pname">${esc(bag?.client_name || '')}</div><div class="pname">${esc(it.product_name || '—')}</div><div class="meta">${esc(it.live_day || '')} · ${esc(String(it.qty ?? 0))} szt · ${pln(it.price)}${tag && !tickable ? ` · ${tag[1]}` : ''}</div></div></article>`;
+}
+function photosView() {
+  const today = todayLabel();
+  const selected = state.photoDay || today;
+  let days = withTodayFirst(sortedDays(state.items), today);
+  if (selected && !days.includes(selected)) days = [selected, ...days];
+  return photosPageHtml({
+    days,
+    selected,
+    number: state.photoNo,
+    busy: state.photoBusy,
+    grid: latestDayPhotos(state.photos, selected, 30),
+    missing: missingHangers(state.items, state.photos, selected),
+  });
 }
 function reportView() {
   const bag = bagBy(state.bagNo);
@@ -835,8 +880,31 @@ async function onClick(e) {
   if (act === 'filter') { state.filter = t.dataset.id; render(); return; }
   if (act === 'nav') { location.hash = t.dataset.to === 'bags' ? '#/' : `#/${t.dataset.to}`; return; }
   if (act === 'open') { location.hash = `#/bag/${encodeURIComponent(t.dataset.bag)}`; return; }
-  if (act === 'back') { location.hash = state.screen === 'report' ? `#/bag/${encodeURIComponent(state.bagNo)}` : '#/'; return; }
+  if (act === 'back') {
+    if (state.viewer) { state.viewer = null; render(); return; }
+    location.hash = state.screen === 'report' ? `#/bag/${encodeURIComponent(state.bagNo)}` : '#/';
+    return;
+  }
   if (act === 'tick') return toggleTick(t.dataset.id);
+  if (act === 'cam-item') return shootItem(t.dataset.id);
+  if (act === 'cam-bag') return shootBag();
+  if (act === 'cam-product') return shootProduct();
+  if (act === 'view-item-proof') return openItemProof(t.dataset.id);
+  if (act === 'view-bag-proof') return openBagProof(t.dataset.id);
+  if (act === 'view-product') return openProduct(t.dataset.day, t.dataset.no, t.dataset.id);
+  if (act === 'fill-no') return fillPhotoNo(t.dataset.no);
+  if (act === 'v-close') { state.viewer = null; render(); return; }
+  if (act === 'v-prev') return viewerStep(-1);
+  if (act === 'v-next') return viewerStep(1);
+  if (act === 'v-ask') {
+    if (state.viewer) { state.viewer.ask = true; render(); }
+    return;
+  }
+  if (act === 'v-keep') {
+    if (state.viewer) { state.viewer.ask = false; render(); }
+    return;
+  }
+  if (act === 'v-delete') return deleteCurrentPhoto();
   if (act === 'done') return doneBag();
   if (act === 'report') { location.hash = `#/report/${encodeURIComponent(state.bagNo)}`; return; }
   if (act === 'send-report') return sendReport();
@@ -858,11 +926,315 @@ function onInput(e) {
   }
   if (el.id === 'hanger') { state.pickerNo = el.value; render(); return; }
   if (el.id === 'day') { state.pickerDay = el.value; render(); return; }
+  if (el.id === 'photo-no') { state.photoNo = el.value; return; }
+  if (el.id === 'photo-day') { state.photoDay = el.value; render(); return; }
   if (el.id === 'rep-item') state.report.itemId = el.value;
   if (el.id === 'rep-field') state.report.field = el.value;
   if (el.id === 'rep-new') state.report.newValue = el.value;
   if (el.id === 'rep-why') state.report.why = el.value;
 }
+function currentUserId() {
+  return state.session?.user?.id || state.me?.id || '';
+}
+function syncViewer() {
+  if (!state.viewer) return;
+  const ids = state.viewer.ids.filter((id) => state.photos.some((p) => p.id === id));
+  if (!ids.length) {
+    state.viewer = null;
+    return;
+  }
+  const cur = state.viewer.ids[state.viewer.index];
+  let index = ids.indexOf(cur);
+  if (index < 0) index = Math.min(state.viewer.index, ids.length - 1);
+  state.viewer.ids = ids;
+  state.viewer.index = index;
+}
+function prepareViewer() {
+  syncViewer();
+}
+function viewerPhoto() {
+  if (!state.viewer) return null;
+  const id = state.viewer.ids[state.viewer.index];
+  return state.photos.find((p) => p.id === id) || null;
+}
+function viewerBlock() {
+  const photo = viewerPhoto();
+  if (!photo || !state.viewer) return '';
+  return viewerHtml({
+    path: photo.path,
+    name: userName(photo.user_id),
+    stamp: photoStamp(photo.created_at),
+    index: state.viewer.index,
+    total: state.viewer.ids.length,
+    canDelete: photo.user_id === currentUserId(),
+    ask: !!state.viewer.ask,
+    busy: state.photoBusy,
+  });
+}
+function openViewer(list, index) {
+  if (!list.length) return;
+  const i = Math.max(0, Math.min(index, list.length - 1));
+  state.viewer = { ids: list.map((p) => p.id), index: i, ask: false };
+  render();
+}
+function openItemProof(itemId) {
+  const list = proofForItem(state.photos, itemId);
+  if (!list.length) return;
+  openViewer(list, list.length - 1);
+}
+function openBagProof(focusId) {
+  const list = proofForBag(state.photos, state.bagNo);
+  if (!list.length) return;
+  const index = Math.max(0, list.findIndex((p) => p.id === focusId));
+  openViewer(list, index);
+}
+function openProduct(day, no, focusId) {
+  const list = productPhotosFor(state.photos, day, no);
+  if (!list.length) return;
+  let index = list.length - 1;
+  if (focusId) {
+    const found = list.findIndex((p) => p.id === focusId);
+    if (found >= 0) index = found;
+  }
+  openViewer(list, index);
+}
+function viewerStep(delta) {
+  if (!state.viewer || state.viewer.ask) return;
+  const next = state.viewer.index + delta;
+  if (next < 0 || next >= state.viewer.ids.length) return;
+  state.viewer.index = next;
+  state.viewer.ask = false;
+  render();
+}
+function fillPhotoNo(no) {
+  if (state.photoBusy) return;
+  state.photoNo = no || '';
+  render();
+  const el = document.getElementById('photo-no');
+  if (el) {
+    el.focus();
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch { /* numeric input */ }
+  }
+}
+function ensureCam() {
+  let input = document.getElementById('cam-file');
+  if (input) return input;
+  input = document.createElement('input');
+  input.id = 'cam-file';
+  input.className = 'cam-file';
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.setAttribute('capture', 'environment');
+  input.tabIndex = -1;
+  input.addEventListener('change', onCamFile);
+  document.body.appendChild(input);
+  return input;
+}
+function shoot(spec) {
+  if (state.photoBusy || !spec) return;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    toast(MSG_FAIL);
+    return;
+  }
+  pendingShot = spec;
+  const input = ensureCam();
+  input.value = '';
+  input.click();
+}
+function shootItem(itemId) {
+  const item = state.items.find((i) => i.id === itemId);
+  if (!item || (item.state !== 'NEW' && item.state !== 'OLD') || !item.bag_no) return;
+  shoot({ kind: 'proof', bag_no: item.bag_no, item_id: item.id });
+}
+function shootBag() {
+  if (!state.bagNo) return;
+  shoot({ kind: 'proof', bag_no: state.bagNo, item_id: null });
+}
+function shootProduct() {
+  const day = document.getElementById('photo-day')?.value || state.photoDay || todayLabel();
+  const no = (document.getElementById('photo-no')?.value ?? state.photoNo).trim();
+  state.photoDay = day;
+  state.photoNo = no;
+  if (!day || !no) {
+    toast('Wpisz numer wieszaka');
+    document.getElementById('photo-no')?.focus();
+    return;
+  }
+  shoot({ kind: 'product', live_day: day, hanger_no: no });
+}
+async function onCamFile(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  const spec = pendingShot;
+  pendingShot = null;
+  if (!file || !spec || state.photoBusy) return;
+  if (file.type && !file.type.startsWith('image/')) {
+    toast(MSG_FAIL);
+    return;
+  }
+  await savePhoto(spec, file);
+}
+async function savePhoto(spec, file) {
+  const userId = currentUserId();
+  if (!userId || state.photoBusy) {
+    toast(MSG_FAIL);
+    return;
+  }
+  state.photoBusy = true;
+  render();
+  toast(MSG_SENDING, 120000);
+  try {
+    if (!navigator.onLine) throw new Error('offline');
+    const blob = await resizeToJpeg(file);
+    const id = uuid();
+    const row = buildPhotoRow(spec, id, userId, new Date().toISOString());
+    const up = await sb.storage.from('pak-photos').upload(row.path, blob, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    });
+    if (up.error) throw up.error;
+    const ins = await sb.from('pak_photos').insert(row);
+    if (ins.error) {
+      try { await sb.storage.from('pak-photos').remove([row.path]); } catch { /* upload is already undone best-effort */ }
+      throw ins.error;
+    }
+    if (!state.photos.some((p) => p.id === row.id)) state.photos.push(row);
+    if (spec.kind === 'product') {
+      state.photoDay = spec.live_day;
+      state.photoNo = '';
+    }
+    state.photoBusy = false;
+    render();
+    toast(MSG_SAVED);
+    if (spec.kind === 'product' && state.screen === 'photos') document.getElementById('photo-no')?.focus();
+  } catch {
+    state.photoBusy = false;
+    render();
+    toast(MSG_FAIL);
+  }
+}
+function storageGone(error) {
+  const msg = `${error?.message || ''} ${error?.status || error?.statusCode || ''}`.toLowerCase();
+  return msg.includes('not found') || msg.includes('404');
+}
+async function deleteCurrentPhoto() {
+  const photo = viewerPhoto();
+  const userId = currentUserId();
+  if (!photo || !state.viewer || state.photoBusy || photo.user_id !== userId) return;
+  state.photoBusy = true;
+  render();
+  let storageError = null;
+  try {
+    const res = await sb.storage.from('pak-photos').remove([photo.path]);
+    storageError = res.error;
+  } catch (err) {
+    storageError = err;
+  }
+  if (storageError && !storageGone(storageError)) {
+    state.photoBusy = false;
+    if (state.viewer) state.viewer.ask = false;
+    render();
+    toast('Nie udało się usunąć zdjęcia');
+    return;
+  }
+  let delError = null;
+  try {
+    const res = await sb.from('pak_photos').delete().eq('id', photo.id).eq('user_id', userId);
+    delError = res.error;
+  } catch (err) {
+    delError = err;
+  }
+  state.photoBusy = false;
+  if (delError) {
+    if (state.viewer) state.viewer.ask = false;
+    render();
+    toast('Nie udało się usunąć zdjęcia');
+    return;
+  }
+  dropSigned(photo.path);
+  state.photos = state.photos.filter((p) => p.id !== photo.id);
+  if (state.viewer) {
+    const ids = state.viewer.ids.filter((id) => id !== photo.id);
+    if (!ids.length) state.viewer = null;
+    else {
+      state.viewer.ids = ids;
+      state.viewer.index = Math.min(state.viewer.index, ids.length - 1);
+      state.viewer.ask = false;
+    }
+  }
+  render();
+  toast('Zdjęcie usunięte');
+}
+let signedRetry = 0;
+function paintSigned() {
+  const root = document.getElementById('app');
+  if (!root) return;
+  const imgs = [...root.querySelectorAll('img[data-path]')];
+  const missing = [];
+  for (const img of imgs) {
+    const path = img.getAttribute('data-path');
+    const url = cachedSigned(path);
+    if (url) applySignedSrc(img, url);
+    else if (path) missing.push(path);
+  }
+  if (!missing.length) return;
+  const gen = ++signGen;
+  signPaths(sb, missing).then(() => {
+    if (gen !== signGen) return;
+    for (const img of imgs) {
+      if (!img.isConnected) continue;
+      const url = cachedSigned(img.getAttribute('data-path'));
+      if (url) applySignedSrc(img, url);
+    }
+  }).catch(() => {});
+}
+function applySignedSrc(img, url) {
+  if (img.dataset.src === url) return;
+  img.dataset.src = url;
+  img.dataset.retried = '';
+  img.onerror = () => {
+    const path = img.getAttribute('data-path');
+    if (!path || img.dataset.retried === '1') return;
+    img.dataset.retried = '1';
+    dropSigned(path);
+    const gen = ++signedRetry;
+    signPaths(sb, [path]).then(() => {
+      if (gen !== signedRetry || !img.isConnected) return;
+      const next = cachedSigned(path);
+      if (next) {
+        img.dataset.src = next;
+        img.src = next;
+      }
+    }).catch(() => {});
+  };
+  img.src = url;
+}
+function bindViewer() {
+  const el = document.getElementById('viewer');
+  if (!el) return;
+  let tracking = false;
+  let px = 0;
+  let py = 0;
+  el.addEventListener('pointerdown', (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    if (ev.target.closest('button, a, input, select, textarea')) return;
+    tracking = true;
+    px = ev.clientX;
+    py = ev.clientY;
+    try { el.setPointerCapture(ev.pointerId); } catch { /* already released */ }
+  });
+  el.addEventListener('pointerup', (ev) => {
+    if (!tracking) return;
+    tracking = false;
+    if (!state.viewer || state.viewer.ask) return;
+    const dx = ev.clientX - px;
+    const dy = ev.clientY - py;
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+    viewerStep(dx < 0 ? 1 : -1);
+  });
+  el.addEventListener('pointercancel', () => { tracking = false; });
+}
+
 function readLoginError() {
   const params = new URLSearchParams(location.search);
   state.loginError = params.get('error_description') || params.get('error') || '';
@@ -870,9 +1242,22 @@ function readLoginError() {
 
 function start() {
   const root = document.getElementById('app');
+  ensureCam();
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onInput);
+  root.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'photo-no') {
+      e.preventDefault();
+      shootProduct();
+    }
+  });
+  window.addEventListener('keydown', (e) => {
+    if (!state.viewer) return;
+    if (e.key === 'Escape') { state.viewer = null; render(); }
+    else if (e.key === 'ArrowLeft') viewerStep(-1);
+    else if (e.key === 'ArrowRight') viewerStep(1);
+  });
   window.addEventListener('hashchange', () => {
     if (state.me?.status === 'approved') route();
   });
