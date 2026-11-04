@@ -76,6 +76,7 @@ function captureProductForm() {
     colors: form.colors?.value ?? '',
     stock: form.stock?.value ?? '',
     sort: form.sort?.value ?? '',
+    video_url: form.video_url?.value ?? '',
     active: !!form.elements.namedItem('active')?.checked,
   };
 }
@@ -211,7 +212,7 @@ function editMain(id) {
   }
   const suggested = nextProductCode(state.products.map((item) => item.code));
   const blank = {
-    code: suggested, title: '', description: '', price: '', sizes: '', colors: '', stock: 1, sort: 0, active: true,
+    code: suggested, title: '', description: '', price: '', sizes: '', colors: '', stock: 1, sort: 0, video_url: '', active: true,
   };
   const saved = product ? {
     code: product.code || '',
@@ -222,6 +223,7 @@ function editMain(id) {
     colors: product.colors || '',
     stock: product.stock ?? 0,
     sort: product.sort ?? 0,
+    video_url: product.video_url || '',
     active: product.active !== false,
   } : blank;
   const value = state.formDraft || saved;
@@ -250,6 +252,10 @@ function editMain(id) {
       ${input('stock', 'Stan', value.stock ?? '', err.stock, 'inputmode="numeric" step="1" min="0"', 'number')}
       ${input('sort', 'Kolejność', value.sort ?? 0, err.sort, 'inputmode="numeric" step="1"', 'number')}
       <label class="check"><input id="active" name="active" type="checkbox"${value.active !== false ? ' checked' : ''}><span>Aktywny w sklepie</span></label>
+      ${input('video_url', 'Film', value.video_url || '', err.video_url, 'placeholder="https://… albo poślemy plik niżej" spellcheck="false"')}
+      <label class="file">Film MP4 lub MOV
+        <input id="video" name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov">
+      </label>
       <p class="group-label">Zdjęcia</p>
       <p class="hint">Długi bok zmniejszamy do 1600 px, JPEG. Najpierw aparat, albo wybierz gotowe zdjęcia.</p>
       <label class="file">Aparat
@@ -347,8 +353,60 @@ function orderCard(order) {
     <p>Pobranie: <b>${esc(formatZl(cod))}</b></p>
     ${items ? `<ul>${items}</ul>` : ''}
     ${order.note ? `<p class="muted">Uwagi: ${esc(order.note)}</p>` : ''}
+    ${proofBadge(order)}
     <div class="wide-actions">${actions}</div>
   </article>`;
+}
+
+function proofBadge(order) {
+  const path = safeProofPath(order?.proof_path);
+  if (!path) return '';
+  return `<p><span class="badge">Potwierdzenie</span> <button type="button" class="btn" data-act="proof" data-path="${esc(path)}">Otwórz</button></p>`;
+}
+
+function safeProofPath(path) {
+  const raw = String(path || '').trim().replace(/^\/+/, '');
+  if (!raw || raw.includes('..') || /[\\:?#]/.test(raw) || raw.includes('://')) return '';
+  if (raw.split('/').some((part) => !part || part === '.')) return '';
+  return raw;
+}
+
+async function openProof(path) {
+  const clean = safeProofPath(path);
+  if (!clean) {
+    toast('Nie udało się otworzyć potwierdzenia.');
+    return;
+  }
+  const { data, error } = await sb.storage.from('shop-proofs').createSignedUrl(clean, 120);
+  if (error || !data?.signedUrl) {
+    toast('Nie udało się otworzyć potwierdzenia.');
+    return;
+  }
+  window.open(data.signedUrl, '_blank', 'noopener');
+}
+
+async function uploadVideo(file) {
+  const name = String(file?.name || '').toLowerCase();
+  const type = String(file?.type || '').toLowerCase();
+  const mov = name.endsWith('.mov') || type === 'video/quicktime';
+  const mp4 = name.endsWith('.mp4') || type === 'video/mp4';
+  if (!mov && !mp4) {
+    toast('Wybierz plik MP4 albo MOV.');
+    return;
+  }
+  const path = `videos/${uuid()}.${mov ? 'mov' : 'mp4'}`;
+  const { error } = await sb.storage.from('shop-photos').upload(path, file, {
+    contentType: mov ? 'video/quicktime' : 'video/mp4',
+    upsert: false,
+  });
+  if (error) {
+    toast('Nie udało się wysłać filmu.');
+    return;
+  }
+  const input = document.getElementById('video_url');
+  if (input) input.value = path;
+  captureProductForm();
+  toast('Film dodany. Zapisz produkt.');
 }
 
 function deliveryLabel(value) {
@@ -672,6 +730,7 @@ async function saveProduct(form) {
     colors: form.colors.value,
     stock: form.stock.value,
     sort: form.sort.value,
+    video_url: form.video_url?.value || '',
   };
   const active = !!form.elements.namedItem('active')?.checked;
   state.formDraft = {
@@ -716,6 +775,7 @@ async function saveProduct(form) {
       sort: checked.sort,
       active,
       photos,
+      video_url: String(state.formDraft?.video_url || '').trim(),
     };
     const write = editingId
       ? sb.from('shop_products').update(payload).eq('id', editingId).select('id')
@@ -818,6 +878,7 @@ function onClick(event) {
     return;
   }
   if (act === 'status') { setStatus(target.dataset.id, target.dataset.status); return; }
+  if (act === 'proof') { openProof(target.dataset.path); return; }
   if (act === 'drop-photo') {
     captureProductForm();
     state.dropPhotos.add(target.dataset.path || '');
@@ -835,6 +896,13 @@ function onClick(event) {
 
 function onChange(event) {
   const input = event.target;
+  if (input.id === 'video') {
+    if (state.saving) return;
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (file) uploadVideo(file);
+    return;
+  }
   if (input.closest('#product-form') && input.id !== 'cam' && input.id !== 'files') captureProductForm();
   if (state.saving) return;
   if (input.id !== 'cam' && input.id !== 'files') return;
