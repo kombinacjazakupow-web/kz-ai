@@ -12,6 +12,7 @@ import {
   cleanVariants, colorViews, freshBadge, isSoldOut, orderCatalog, stockForColor, variantError,
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
+import { buyLabel } from './buy.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, shouldShowPromo,
@@ -192,11 +193,21 @@ function addRoom(product) {
   return Math.max(0, Math.min(99, Math.floor(stock)) - heldQty(product?.id));
 }
 
-function toast(msg) {
+function toast(msg, action) {
   const el = document.getElementById('toast');
   if (!el) return;
   el.hidden = false;
-  el.textContent = msg;
+  el.replaceChildren(document.createTextNode(msg));
+  if (action?.href && action?.label) {
+    const link = document.createElement('a');
+    link.href = action.href;
+    link.textContent = action.label;
+    el.append(document.createTextNode(' '));
+    el.append(link);
+  }
+  el.classList.remove('bounce');
+  void el.offsetWidth;
+  el.classList.add('bounce');
   clearTimeout(toast._t);
   toast._t = setTimeout(() => { el.hidden = true; }, 2800);
 }
@@ -353,9 +364,13 @@ function productMain(code) {
   }
   syncPick(product);
   const photos = photoList(product);
-  const slides = photos.length
-    ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true)).join('')
-    : `<span class="ph">${esc(letter(product.title))}</span>`;
+  const film = videoSrc(product.video_url);
+  const filmSlide = film
+    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+    : '';
+  const slides = (filmSlide + (photos.length
+    ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
+    : '')) || `<span class="ph">${esc(letter(product.title))}</span>`;
   const nav = photos.length > 1
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
@@ -379,15 +394,10 @@ function productMain(code) {
         <span id="pqty">${esc(String(state.pick.qty))}</span>
         <button type="button" data-act="pqty" data-dir="1" aria-label="Więcej" ${state.pick.qty >= max ? 'disabled' : ''}>+</button>
       </div>
-      <button type="button" class="btn primary block" data-act="add">Dodaj do koszyka</button>`;
+      `;
   const desc = String(product.description || '').trim();
-  const film = videoSrc(product.video_url);
-  const video = film
-    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
-    : '';
-  return `<main>
+  return `<main class="product-page">
     <p><a class="back" href="#/">← Sklep</a></p>
-    ${video}
     <div class="gal-wrap">
       <div class="gallery" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
       ${nav}
@@ -398,6 +408,7 @@ function productMain(code) {
     ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
     ${desc ? `<p class="desc">${esc(desc)}</p>` : ''}
     ${buy}
+    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || left < 1 ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold || left < 1))}</button></div>
   </main>`;
 }
 
@@ -989,7 +1000,8 @@ function addCurrent() {
   if (count) count.textContent = n ? String(n) : '';
   const link = document.querySelector('.cartlink');
   if (link) link.setAttribute('aria-label', `Koszyk, ${n} szt.`);
-  toast(result.added > 0 ? 'Dodano do koszyka.' : 'W koszyku jest już cały dostępny stan.');
+  if (result.added > 0) toast('Dodano.', { href: '#/koszyk', label: 'Do kasy' });
+  else toast('W koszyku jest już cały dostępny stan.');
 }
 
 function onClick(event) {
