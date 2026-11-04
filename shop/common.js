@@ -228,6 +228,7 @@ export function parseRoute(hash) {
   if (clean === '/zamowienie') return { name: 'checkout' };
   if (clean === '/moje') return { name: 'orders' };
   if (clean === '/konto') return { name: 'account' };
+  if (clean === '/rolki') return { name: 'reels' };
   const match = clean.match(/^\/p\/([^/]+)$/);
   if (!match) return { name: 'catalog' };
   let code = match[1];
