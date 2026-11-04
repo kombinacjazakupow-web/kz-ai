@@ -16,6 +16,7 @@ import { buyLabel } from './buy.js';
 import { buyerLine, hasSavedBuyer } from './checkout.js';
 import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
 import { reelItems } from './rolki.js';
+import { INSTALL_HIDE_KEY, installKind } from './install.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   accountEmptyText, claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
@@ -295,6 +296,7 @@ function catalogMain() {
   return `<main>
     ${heroHtml()}
     ${railHtml()}
+    ${installCard()}
     <h2 id="kolekcja">Kolekcja</h2>
     ${homeSurpriseHtml()}
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
@@ -556,6 +558,24 @@ function buyerFields(draft, err) {
       ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
       ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
       ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
+}
+
+function installCard() {
+  if (state.installHide || inStandalone()) return '';
+  const kind = installKind({
+    ua: navigator.userAgent,
+    standalone: inStandalone(),
+    promptReady: state.installReady,
+  });
+  if (kind === 'installed' || kind === 'other') return '';
+  const hide = '<button type="button" class="btn ghost" data-act="install-hide">Nie teraz</button>';
+  if (kind === 'ios') {
+    return `<aside class="install-card"><p>Dodaj sklep na telefon</p><ol><li>Stuknij Udostępnij</li><li>Wybierz Do ekranu początkowego</li></ol>${hide}</aside>`;
+  }
+  if (kind === 'android') {
+    return `<aside class="install-card"><p>Dodaj sklep na telefon</p><button type="button" class="btn primary" data-act="install">Zainstaluj</button>${hide}</aside>`;
+  }
+  return `<aside class="install-card"><p>W Chrome otwórz menu i wybierz Dodaj do ekranu głównego.</p>${hide}</aside>`;
 }
 
 function reelsMain() {
@@ -1109,6 +1129,12 @@ function onClick(event) {
     return;
   }
   if (act === 'install') { offerInstallPrompt(); return; }
+  if (act === 'install-hide') {
+    state.installHide = true;
+    try { localStorage.setItem(INSTALL_HIDE_KEY, '1'); } catch { /* the card stays hidden for this visit */ }
+    paint({ keep: true });
+    return;
+  }
   if (act === 'promo-close') {
     state.promoDismissed = true;
     state.promoOpen = false;
@@ -1342,6 +1368,7 @@ function start() {
   const storedDraft = readJson(DRAFT_KEY, {});
   state.draft = { ...emptyDraft(), ...(storedDraft && typeof storedDraft === 'object' ? storedDraft : {}) };
   state.thanks = loadThanks();
+  try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
   const root = document.getElementById('app');
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
