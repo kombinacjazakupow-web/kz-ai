@@ -394,11 +394,8 @@ export function mapOrderError(code) {
   const raw = String(code || '').trim();
   const splitAt = raw.indexOf(':');
   const key = splitAt === -1 ? raw : raw.slice(0, splitAt);
-  const rest = splitAt === -1 ? '' : raw.slice(splitAt + 1).trim().slice(0, 40);
-  if (key === 'out_of_stock') {
-    const base = 'Ten produkt właśnie się wyprzedał.';
-    return rest ? `${base} (${rest})` : base;
-  }
+  if (key === 'color') return 'Ten kolor właśnie się skończył – wybierz inny';
+  if (key === 'out_of_stock') return 'Ktoś był szybszy – ten kolor jest już wyprzedany';
   const table = {
     phone: 'Sprawdź numer telefonu — potrzebujemy 9 cyfr.',
     postcode: 'Sprawdź kod pocztowy. Poprawny format to 00-000.',
