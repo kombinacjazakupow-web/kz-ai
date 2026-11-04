@@ -107,4 +107,10 @@ test('packing worker stays inside /pakowanie/ and keeps the shop cache', () => {
   const app = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
   assert.match(app, /redirectTo: location\.origin \+ location\.pathname/);
   assert.match(app, /register\('\.\/sw\.js', \{ scope: '\.\/' \}\)/);
+  assert.match(app, /const QUEUE_KEY = 'kombi-tick-queue'/);
+  assert.doesNotMatch(app, /storageKey/);
+  const root = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(root, /kombi-tick-queue/);
+  assert.match(root, /sb-ghhatjkcgilnruluhxyr-auth-token/);
+  assert.match(root, /pakowanie\//);
 });
