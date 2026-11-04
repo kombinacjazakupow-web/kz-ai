@@ -13,7 +13,7 @@ import {
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
-import { buyerLine, hasSavedBuyer } from './checkout.js';
+import { buyerLine, savedBuyerOk } from './checkout.js';
 import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
 import { reelItems } from './rolki.js';
 import { INSTALL_HIDE_KEY, installKind } from './install.js';
@@ -540,7 +540,7 @@ function checkoutMain() {
 }
 
 function buyerFields(draft, err) {
-  if (hasSavedBuyer(draft) && !state.editBuyer) {
+  if (savedBuyerOk(draft) && !state.editBuyer) {
     const hidden = ['name', 'phone', 'email', 'street', 'postcode', 'city']
       .map((key) => `<input type="hidden" name="${key}" value="${esc(draft[key] || '')}">`)
       .join('');
@@ -1001,6 +1001,9 @@ async function placeOrder(form) {
   const checked = validateCheckout(input, lines);
   const stockMsg = state.loaded ? stockProblem(lines, state.products) : '';
   if (!checked.ok || stockMsg) {
+    if (['name', 'phone', 'email', 'street', 'postcode', 'city'].some((key) => checked.errors[key])) {
+      state.editBuyer = true;
+    }
     state.fieldErrors = checked.errors;
     state.formError = stockMsg || '';
     if (stockMsg) state.fieldErrors = { ...checked.errors, items: checked.errors.items || stockMsg };
