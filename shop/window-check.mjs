@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import { SLOGANS, BLIK_COPY } from './common.js';
+import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
+
+const variants = [];
+const older = { id: 'a', active: true, created_at: '2026-11-01T00:00:00.000Z', stock: 2, colors: '' };
+const newer = { id: 'b', active: true, created_at: '2026-11-04T00:00:00.000Z', stock: 2, colors: '' };
+const sold = { id: 'c', active: true, created_at: '2026-11-05T00:00:00.000Z', stock: 0, colors: '' };
+assert.equal(newestDrop([older, sold, newer], variants).id, 'b');
+assert.deepEqual(dropRail([older, newer, sold], variants).map((item) => item.id), ['a']);
+assert.equal(dotPaint('czarny'), '#1c1c1c');
+assert.equal(dotPaint('nieznany'), '#c4b7a6');
+assert.equal(visibleDots([{ name: 'ecru', stock: 0 }, { name: 'czarny', stock: 1 }]).length, 1);
+assert.equal(SLOGANS.length, 7);
+assert.equal(BLIK_COPY, '796 669 157');
+console.log('window-check ok');
