@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { mapOrderError } from './common.js';
+import { lineKey, mapOrderError, upsertLine } from './common.js';
 import {
-  COLOR_GONE, COLOR_SOLD, cleanVariants, colorViews, freshBadge, isSoldOut,
-  orderCatalog, stockForColor, variantError,
+  COLOR_GONE, COLOR_SOLD, cleanVariants, colorBasket, colorViews, freshBadge, isSoldOut,
+  lineStock, orderCatalog, roomForColor, stockForColor, variantError,
 } from './variants.js';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -50,5 +50,19 @@ const waiting = colorViews(product, []);
 assert.ok(waiting.every((view) => view.stock == null));
 assert.equal(isSoldOut(product, []), false);
 assert.equal(freshBadge(product, []), '');
+
+const black = { product_id: id, code: 'K-1', title: 'Sukienka', price: 69, size: 'uniwersalny', color: 'czarny', qty: 1 };
+const ecru = { ...black, color: 'ecru' };
+const first = upsertLine([], black, lineStock(1, colorBasket([], id, 'czarny').other));
+assert.equal(first.added, 1);
+const held = colorBasket(first.lines, id, 'ecru');
+assert.equal(roomForColor(1, colorBasket(first.lines, id, 'czarny').same), 0);
+assert.equal(roomForColor(1, held.same), 1);
+const second = upsertLine(first.lines, ecru, lineStock(1, held.other));
+assert.equal(second.added, 1);
+assert.equal(second.lines.map((line) => line.color).join(','), 'czarny,ecru');
+const again = upsertLine(second.lines, ecru, lineStock(1, colorBasket(second.lines, id, 'ecru').other));
+assert.equal(again.added, 0);
+assert.equal(lineKey(second.lines[1]).endsWith('|ecru'), true);
 
 console.log('variants-check ok');

@@ -9,7 +9,7 @@ import {
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
 import {
-  cleanVariants, colorViews, freshBadge, isSoldOut, orderCatalog, stockForColor, variantError,
+  cleanVariants, colorBasket, colorViews, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
@@ -186,16 +186,14 @@ function stockOf(product, color) {
   return stockForColor(product, state.variants, color ?? state.pick.color);
 }
 
-function heldQty(productId) {
-  return state.basket.reduce((sum, line) => (
-    String(line.product_id) === String(productId) ? sum + (Number(line.qty) || 0) : sum
-  ), 0);
+function addRoom(product, color = state.pick.color) {
+  const held = colorBasket(state.basket, product?.id, color);
+  return roomForColor(stockOf(product, color), held.same);
 }
 
-function addRoom(product) {
-  const stock = stockOf(product);
-  if (stock == null) return 99;
-  return Math.max(0, Math.min(99, Math.floor(stock)) - heldQty(product?.id));
+function allowanceFor(product, color) {
+  const held = colorBasket(state.basket, product?.id, color);
+  return lineStock(stockOf(product, color), held.other);
 }
 
 function toast(msg, action) {
@@ -396,17 +394,15 @@ function productMain(code) {
   const left = addRoom(product);
   if (left > 0 && state.pick.qty > left) state.pick.qty = left;
   const max = Math.max(left, 1);
+  const heldHere = !sold && left < 1;
   const buy = sold
     ? '<p class="badge sold" style="position:static;display:inline-block">WYPRZEDANE</p>'
-    : left < 1
-    ? '<p>W koszyku jest już cały dostępny stan.</p>'
     : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${colorChips(product)}
-      <div class="stepper" aria-label="Ilość">
+      ${heldHere ? '<p>W koszyku jest już cały dostępny stan.</p>' : `<div class="stepper" aria-label="Ilość">
         <button type="button" data-act="pqty" data-dir="-1" aria-label="Mniej" ${state.pick.qty <= 1 ? 'disabled' : ''}>−</button>
         <span id="pqty">${esc(String(state.pick.qty))}</span>
         <button type="button" data-act="pqty" data-dir="1" aria-label="Więcej" ${state.pick.qty >= max ? 'disabled' : ''}>+</button>
-      </div>
-      `;
+      </div>`}`;
   const desc = String(product.description || '').trim();
   return `<main class="product-page">
     <p><a class="back" href="#/">← Sklep</a></p>
@@ -420,7 +416,7 @@ function productMain(code) {
     ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
     ${desc ? `<p class="desc">${esc(desc)}</p>` : ''}
     ${buy}
-    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || left < 1 ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold || left < 1))}</button></div>
+    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
   </main>`;
 }
 
@@ -1091,6 +1087,7 @@ function addCurrent() {
   if (colors.length && !state.pick.color) { toast('Wybierz kolor.'); return; }
   const stock = stockOf(product, state.pick.color);
   if (stock != null && stock <= 0) { toast('Wyprzedane.'); return; }
+  const allowance = allowanceFor(product, state.pick.color);
   const result = upsertLine(state.basket, {
     product_id: product.id,
     code: String(product.code || ''),
@@ -1100,8 +1097,9 @@ function addCurrent() {
     size: state.pick.size || '',
     color: state.pick.color || '',
     photo: photoList(product)[0] || '',
-  }, stock == null ? undefined : stock);
+  }, allowance);
   setBasket(result.lines);
+  paint({ keep: true });
   const count = document.getElementById('cart-count');
   const n = countPieces();
   if (count) count.textContent = n ? String(n) : '';
@@ -1180,7 +1178,11 @@ function onClick(event) {
       : colorViews(product, state.variants).filter((view) => view.stock == null || view.stock > 0).map((view) => view.name);
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
-    else state.pick.color = chosen;
+    else {
+      state.pick.color = chosen;
+      paint({ keep: true });
+      return;
+    }
     document.querySelectorAll('[data-act="pick"]').forEach((button) => {
       const selected = button.dataset.kind === 'size' ? state.pick.size : state.pick.color;
       const on = button.dataset.kind === kind ? button.dataset.val === chosen : button.dataset.val === selected;
@@ -1207,9 +1209,9 @@ function onClick(event) {
     const key = target.dataset.key || '';
     const line = state.basket.find((item) => lineKey(item) === key);
     const product = line ? productById(line.product_id) : null;
-    const stock = product ? stockOf(product, line.color) : null;
-    if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, stock == null ? undefined : stock));
-    else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), stock == null ? undefined : stock));
+    const allowance = product ? allowanceFor(product, line.color) : undefined;
+    if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
+    else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
     paint({ keep: true });
     return;
   }
