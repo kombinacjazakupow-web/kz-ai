@@ -9,6 +9,11 @@ export function accountEmptyText(count) {
   return Number(count) > 0 ? '' : 'Nie masz jeszcze zamówień na tym koncie.';
 }
 
+export function ignoreSameSignIn(event, previousId, nextId) {
+  const previous = String(previousId || '');
+  return event === 'SIGNED_IN' && previous !== '' && previous === String(nextId || '');
+}
+
 const CLAIM_TEXT = {
   ok: 'Numer dopisany. Oto Twoje zamówienia.',
   nomatch: 'Nie znaleźliśmy zamówienia z tym telefonem i numerem.',

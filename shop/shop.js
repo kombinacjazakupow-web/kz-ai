@@ -20,7 +20,7 @@ import { INSTALL_HIDE_KEY, installKind } from './install.js';
 import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
-  accountEmptyText, claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
+  accountEmptyText, claimCode, claimMessage, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
 } from './account.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -1428,7 +1428,7 @@ function start() {
   paint();
   loadProducts();
   sb.auth.onAuthStateChange((event, session) => {
-    if (event === 'TOKEN_REFRESHED') {
+    if (event === 'TOKEN_REFRESHED' || ignoreSameSignIn(event, state.session?.user?.id, session?.user?.id)) {
       state.session = session;
       return;
     }
