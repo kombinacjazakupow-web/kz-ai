@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
 
-const source = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8')
+const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8')
   .replace(
     /^import \{ createClient \} from 'https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.45\.4\/\+esm';/m,
     'const createClient = () => ({ auth: { onAuthStateChange() {} }, channel() { return { on() { return this; }, subscribe() {} }; }, removeAllChannels() {} });',
@@ -48,7 +48,7 @@ test('hanger ticks are blocked on done and hold bags', () => {
 test('toast text survives a redraw', () => {
   mod.toast('Worek wstrzymany — bez odhaczeń');
   assert.equal(mod.currentToast(), 'Worek wstrzymany — bez odhaczeń');
-  const src = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
   const renderAt = src.indexOf('root.innerHTML = shell();');
   const after = src.slice(renderAt, renderAt + 80);
   assert.match(after, /paintToast\(\)/);
@@ -57,7 +57,7 @@ test('toast text survives a redraw', () => {
 });
 
 test('done waits for the flush already in flight', () => {
-  const src = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
   assert.match(src, /if \(!flushWait\) flushWait = runFlush\(\)/);
   assert.match(src, /if \(loadQueue\(\)\.length \|\| flushWait\) await flushQueue\(\)/);
 });
@@ -98,4 +98,19 @@ test('paging does not loop when a page repeats rows', async () => {
   });
   assert.deepEqual(rows.map((row) => row.id), ['a', 'b']);
   assert.equal(calls, 2);
+});
+
+test('packing worker stays inside /pakowanie/ and keeps the shop cache', () => {
+  const worker = fs.readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
+  assert.match(worker, /startsWith\('kombi-shell-'\) && key !== CACHE/);
+  assert.match(worker, /self\.registration\.scope/);
+  const app = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+  assert.match(app, /redirectTo: location\.origin \+ location\.pathname/);
+  assert.match(app, /register\('\.\/sw\.js', \{ scope: '\.\/' \}\)/);
+  assert.match(app, /const QUEUE_KEY = 'kombi-tick-queue'/);
+  assert.doesNotMatch(app, /storageKey/);
+  const root = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.match(root, /kombi-tick-queue/);
+  assert.match(root, /sb-ghhatjkcgilnruluhxyr-auth-token/);
+  assert.match(root, /pakowanie\//);
 });

@@ -1,14 +1,22 @@
-const CACHE = 'kombi-shell-v2';
+// Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
+const CACHE = 'kombi-sklep-shell-v1';
 const SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './shop.css',
+  './shop.js',
+  './common.js',
+  './admin.html',
+  './admin.js',
+  './regulamin.html',
+  './prywatnosc.html',
+  './zwroty.html',
   './manifest.webmanifest',
-  './icons/icon.svg',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/apple-touch-icon.png',
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-192.png',
+  './icon-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -20,7 +28,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key.startsWith('kombi-sklep-shell-') && key !== CACHE)
+          .map((key) => caches.delete(key)),
+      ))
       .then(() => self.clients.claim()),
   );
 });
@@ -29,17 +41,15 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.hostname.endsWith('supabase.co')) {
-    event.respondWith(fetch(req));
-    return;
-  }
-  if (url.origin === self.location.origin) {
-    if (url.search) return;
-    event.respondWith(networkFirst(req));
-    return;
-  }
-  if (url.hostname === 'cdn.jsdelivr.net') event.respondWith(networkFirst(req));
+  if (url.hostname.endsWith('supabase.co') || url.hostname.includes('supabase')) return;
+  if (url.origin !== self.location.origin || url.search) return;
+  if (!isShell(url)) return;
+  event.respondWith(networkFirst(req));
 });
+
+function isShell(url) {
+  return SHELL.some((item) => new URL(item, self.registration.scope).pathname === url.pathname);
+}
 
 async function networkFirst(req) {
   const cache = await caches.open(CACHE);

@@ -3,7 +3,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, photoUrl, videoSrc, splitList, parseRoute, stockBadge, sanitizeBasket,
+  esc, formatZl, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, stockBadge, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
@@ -30,6 +30,8 @@ const state = {
   mine: [],
   proofNote: {},
   proofBusy: '',
+  installReady: false,
+  installEvent: null,
 };
 
 function emptyDraft() {
@@ -207,8 +209,11 @@ function topbar() {
 
 function footer() {
   return `<footer class="footer">
+    <button type="button" class="install" id="install" data-act="install"${state.installReady ? '' : ' hidden'}>Zainstaluj aplikację</button>
     <a href="#/moje">Moje zamówienia</a>
     <a href="regulamin.html">Regulamin</a>
+    <a href="prywatnosc.html">Polityka prywatności</a>
+    <a href="zwroty.html">Zwroty i reklamacje</a>
     <button type="button" data-act="reload">Odśwież</button>
     <a href="admin.html">Panel</a>
   </footer>`;
@@ -268,9 +273,7 @@ function productMain(code) {
   if (!product) {
     return `<main class="center"><h1>Nie ma takiego produktu</h1><p><a class="btn primary" href="#/">Wróć do sklepu</a></p></main>`;
   }
-  if (state.pick.code !== String(product.code)) {
-    state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
-  }
+  syncPick(product);
   const photos = photoList(product);
   const slides = photos.length
     ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true)).join('')
@@ -630,10 +633,21 @@ async function placeOrder(form) {
   if (failed) focusError();
 }
 
+function syncPick(product) {
+  const sizes = splitList(product.sizes);
+  const colors = splitList(product.colors);
+  if (state.pick.code !== String(product.code)) {
+    state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
+  }
+  state.pick.size = settleOption(sizes, state.pick.size);
+  state.pick.color = settleOption(colors, state.pick.color);
+}
+
 function addCurrent() {
   const route = parseRoute(location.hash);
   const product = findProduct(route.code);
   if (!product) return;
+  syncPick(product);
   const sizes = splitList(product.sizes);
   const colors = splitList(product.colors);
   if (sizes.length && !state.pick.size) { toast('Wybierz rozmiar.'); return; }
@@ -681,15 +695,18 @@ function onClick(event) {
     if (gallery) gallery.scrollTo({ left: idx * gallery.clientWidth, behavior: 'smooth' });
     return;
   }
+  if (act === 'install') { offerInstallPrompt(); return; }
   if (act === 'pick') {
     const kind = target.dataset.kind;
-    const value = target.dataset.val || '';
-    const current = kind === 'size' ? state.pick.size : state.pick.color;
-    const next = current === value ? '' : value;
-    if (kind === 'size') state.pick.size = next;
-    if (kind === 'color') state.pick.color = next;
-    document.querySelectorAll(`[data-kind="${kind}"]`).forEach((button) => {
-      const on = button.dataset.val === next;
+    const product = findProduct(state.pick.code);
+    if (!product || (kind !== 'size' && kind !== 'color')) return;
+    const options = splitList(kind === 'size' ? product.sizes : product.colors);
+    const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
+    if (kind === 'size') state.pick.size = chosen;
+    else state.pick.color = chosen;
+    document.querySelectorAll('[data-act="pick"]').forEach((button) => {
+      const selected = button.dataset.kind === 'size' ? state.pick.size : state.pick.color;
+      const on = button.dataset.kind === kind ? button.dataset.val === chosen : button.dataset.val === selected;
       button.classList.toggle('on', on);
       button.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
@@ -901,6 +918,42 @@ function start() {
   state.loading = true;
   paint();
   loadProducts();
+}
+
+function offerInstallPrompt() {
+  const promptEvent = state.installEvent;
+  if (!promptEvent) return;
+  state.installEvent = null;
+  state.installReady = false;
+  const button = document.getElementById('install');
+  if (button) button.hidden = true;
+  promptEvent.prompt();
+}
+
+function inStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeinstallprompt', (event) => {
+    if (inStandalone()) return;
+    event.preventDefault();
+    state.installEvent = event;
+    state.installReady = true;
+    const button = document.getElementById('install');
+    if (button) button.hidden = false;
+  });
+  window.addEventListener('appinstalled', () => {
+    state.installEvent = null;
+    state.installReady = false;
+    const button = document.getElementById('install');
+    if (button) button.hidden = true;
+  });
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+    });
+  }
 }
 
 if (typeof document !== 'undefined' && document.getElementById('app')) start();

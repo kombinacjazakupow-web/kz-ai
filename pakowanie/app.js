@@ -1026,7 +1026,7 @@ function start() {
     if (document.visibilityState === 'visible' && state.session) flushQueue();
   });
   setInterval(() => { if (state.session) flushQueue(); }, 20000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
   readLoginError();
   render();
   sb.auth.onAuthStateChange((event, session) => {

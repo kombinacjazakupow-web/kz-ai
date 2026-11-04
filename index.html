@@ -2,26 +2,34 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#141414">
-  <meta name="description" content="KOMBI Pakowanie — worki, wieszaki, odhaczenia.">
-  <meta name="robots" content="noindex">
-  <meta name="format-detection" content="telephone=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="KOMBI">
-  <title>KOMBI Pakowanie</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css">
+  <title>KOMBI Sklep</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <style>html{background:#fff}</style>
+  <script>
+    (function () {
+      var path = location.pathname;
+      var dir = path.endsWith('/') ? path : path.replace(/[^/]*$/, '');
+      var hash = location.hash || '';
+      var search = location.search || '';
+      var packingHash = hash && hash !== '#';
+      var authReturn = /(?:^|[?&])(code|error|error_description|access_token|refresh_token)=/.test(search);
+      var packingPhone = false;
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var key = localStorage.key(i) || '';
+          if (key === 'kombi-tick-queue' || key.indexOf('kombi-tick-queue:') === 0 || key.indexOf('sb-ghhatjkcgilnruluhxyr-auth-token') === 0) {
+            packingPhone = true;
+            break;
+          }
+        }
+      } catch (err) { /* private mode opens the shop */ }
+      if (packingHash || authReturn || packingPhone) location.replace(dir + 'pakowanie/' + search + hash);
+      else location.replace(dir + 'shop/' + search);
+    })();
+  </script>
 </head>
 <body>
-  <div id="app" class="app">
-    <main class="center"><p>Ładowanie…</p></main>
-  </div>
-  <noscript><p class="noscript">Włącz JavaScript, żeby pakować.</p></noscript>
-  <script type="module" src="app.js"></script>
+  <noscript><p><a href="shop/">KOMBI Sklep</a></p></noscript>
 </body>
 </html>
