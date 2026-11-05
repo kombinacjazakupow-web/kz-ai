@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { lineKey, mapOrderError, upsertLine } from './common.js';
 import {
-  COLOR_GONE, COLOR_SOLD, cleanVariants, colorBasket, colorViews, freshBadge, isSoldOut,
+  COLOR_GONE, COLOR_SOLD, cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut,
   lineStock, orderCatalog, roomForColor, stockForColor, variantError,
 } from './variants.js';
 
@@ -64,5 +64,18 @@ assert.equal(second.lines.map((line) => line.color).join(','), 'czarny,ecru');
 const again = upsertLine(second.lines, ecru, lineStock(1, colorBasket(second.lines, id, 'ecru').other));
 assert.equal(again.added, 0);
 assert.equal(lineKey(second.lines[1]).endsWith('|ecru'), true);
+
+const shared = { id: '33333333-3333-4333-8333-333333333333', colors: 'czarny, ecru', stock: 1 };
+assert.equal(colorsShareStock(shared, []), true);
+assert.equal(colorsShareStock(shared, [{ product_id: shared.id, color: 'czarny', stock: 1 }]), false);
+assert.equal(stockForColor(shared, [], 'ecru'), 1);
+const sharedBlack = { product_id: shared.id, code: 'K-2', title: 'Sukienka', price: 69, size: 'uniwersalny', color: 'czarny', qty: 1 };
+const sharedFirst = upsertLine([], sharedBlack, lineStock(1, 0));
+assert.equal(sharedFirst.added, 1);
+const sharedRoom = roomForColor(stockForColor(shared, [], 'ecru'), colorBasket(sharedFirst.lines, shared.id, 'ecru').same + colorBasket(sharedFirst.lines, shared.id, 'ecru').other);
+assert.equal(sharedRoom, 0);
+const sharedSecond = upsertLine(sharedFirst.lines, { ...sharedBlack, color: 'ecru' }, lineStock(1, 0));
+assert.equal(sharedSecond.added, 0);
+assert.equal(sharedSecond.lines.length, 1);
 
 console.log('variants-check ok');

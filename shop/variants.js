@@ -89,6 +89,12 @@ export function lineStock(stock, otherQty) {
   return Math.floor(Number(stock)) + (Math.round(Number(otherQty)) || 0);
 }
 
+export function colorsShareStock(product, variants) {
+  if (!splitList(product?.colors).length) return false;
+  const id = String(product?.id || '');
+  return !(Array.isArray(variants) ? variants : []).some((row) => String(row?.product_id || '') === id);
+}
+
 export function stockForColor(product, variants, color) {
   const views = colorViews(product, variants);
   const hit = views.find((view) => view.name === String(color || ''));

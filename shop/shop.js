@@ -9,7 +9,7 @@ import {
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
 import {
-  cleanVariants, colorBasket, colorViews, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
+  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
@@ -188,12 +188,14 @@ function stockOf(product, color) {
 
 function addRoom(product, color = state.pick.color) {
   const held = colorBasket(state.basket, product?.id, color);
-  return roomForColor(stockOf(product, color), held.same);
+  const used = colorsShareStock(product, state.variants) ? held.same + held.other : held.same;
+  return roomForColor(stockOf(product, color), used);
 }
 
 function allowanceFor(product, color) {
   const held = colorBasket(state.basket, product?.id, color);
-  return lineStock(stockOf(product, color), held.other);
+  const other = colorsShareStock(product, state.variants) ? 0 : held.other;
+  return lineStock(stockOf(product, color), other);
 }
 
 function toast(msg, action) {
