@@ -227,7 +227,18 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
   100% { transform: translateX(-50%); }
 }
 @media (prefers-reduced-motion: reduce) { .toast.bounce { animation: none; } }
-.gallery .product-video { flex: 0 0 100%; width: 100%; height: 100%; object-fit: cover; scroll-snap-align: center; }
+.gallery .product-video {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  object-fit: cover;
+  border-radius: 0;
+  box-shadow: none;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
 .product-video {
   display: block;
   width: 100%;

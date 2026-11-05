@@ -3,7 +3,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
@@ -381,12 +381,14 @@ function productMain(code) {
   const slides = (filmSlide + (photos.length
     ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
     : '')) || `<span class="ph">${esc(letter(product.title))}</span>`;
-  const nav = photos.length > 1
+  const plan = slidePlan(Boolean(film), photos.length);
+  const labels = [...(film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
+  const nav = plan.controls
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
     : '';
-  const dots = photos.length > 1
-    ? `<div class="dots" id="dots">${photos.map((_, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="Zdjęcie ${i + 1}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
+  const dots = plan.controls
+    ? `<div class="dots" id="dots">${labels.map((label, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="${label}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
     : '';
   const badge = freshBadge(product, state.variants);
   const sold = isSoldOut(product, state.variants);
@@ -940,7 +942,10 @@ function afterPaint() {
     const index = Math.round(gallery.scrollLeft / Math.max(gallery.clientWidth, 1));
     dots.querySelectorAll('button').forEach((button, i) => button.classList.toggle('on', i === index));
     const live = document.getElementById('gal-live');
-    if (live) live.textContent = `Zdjęcie ${index + 1} z ${dots.children.length}`;
+    if (live) {
+      const label = dots.children[index]?.getAttribute('aria-label') || '';
+      live.textContent = label ? `${label}, ${index + 1} z ${dots.children.length}` : '';
+    }
   };
   gallery.addEventListener('scroll', mark, { passive: true });
   mark();

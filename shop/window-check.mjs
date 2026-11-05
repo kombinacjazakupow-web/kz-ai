@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { SLOGANS, BLIK_COPY, photoSrc, photoUrl } from './common.js';
+import { SLOGANS, BLIK_COPY, photoSrc, photoUrl, slidePlan } from './common.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 
 const variants = [];
@@ -15,4 +15,7 @@ assert.equal(SLOGANS.length, 7);
 assert.equal(BLIK_COPY, '796 669 157');
 assert.equal(photoSrc('products/a.jpg', 800), photoUrl('products/a.jpg'));
 assert.equal(photoSrc('products/a.jpg', 800).includes('/render/image/'), false);
+assert.deepEqual(slidePlan(true, 1), { total: 2, controls: true });
+assert.deepEqual(slidePlan(false, 1), { total: 1, controls: false });
+assert.deepEqual(slidePlan(true, 0), { total: 1, controls: false });
 console.log('window-check ok');

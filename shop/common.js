@@ -104,6 +104,12 @@ export function videoSrc(value) {
   return photoUrl(raw);
 }
 
+export function slidePlan(hasFilm, photoCount) {
+  const photos = Math.max(0, Math.floor(Number(photoCount)) || 0);
+  const total = (hasFilm ? 1 : 0) + photos;
+  return { total, controls: total > 1 };
+}
+
 export function proofKind(file) {
   const name = String(file?.name || '').toLowerCase();
   const type = String(file?.type || '').toLowerCase();
