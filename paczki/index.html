@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Sprawdź paczkę - Kombinacja Zakupów</title>
+<style>
+  :root { --bg:#faf7f5; --card:#fff; --ink:#2a1f22; --muted:#6f6266; --brand:#7c1d3a; --line:#e6dcd8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:460px; margin:0 auto; padding:32px 16px; }
+  h1 { font-size:24px; margin:0 0 8px; color:var(--brand); }
+  p { margin:0 0 16px; color:var(--muted); }
+  form { display:flex; flex-direction:column; gap:10px; }
+  label { font-weight:600; }
+  input { font-size:18px; padding:12px; border:1px solid var(--line); border-radius:8px; width:100%; }
+  button { font-size:17px; font-weight:600; padding:13px; border:0; border-radius:8px; background:var(--brand); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  #out { margin-top:20px; }
+  .parcel { display:block; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:10px; color:var(--ink); text-decoration:none; }
+  .parcel b { display:block; color:var(--brand); }
+  .parcel small { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sprawdź swoją paczkę</h1>
+  <p>Wpisz numer telefonu podany do wysyłki. Pokażemy paczki wysłane na ten numer.</p>
+  <form id="f">
+    <label for="phone">Numer telefonu</label>
+    <input id="phone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="np. 600 100 200" required>
+    <button id="go" type="submit">Sprawdź</button>
+  </form>
+  <div id="out" aria-live="polite"></div>
+</main>
+<script>
+const URL_BASE = 'https://ghhatjkcgilnruluhxyr.supabase.co';
+const KEY = 'sb_publishable_pIiSGwIiJJmkNsvlZyniAw_6CQ1FlpF';
+const f = document.getElementById('f'), out = document.getElementById('out'), go = document.getElementById('go');
+const say = t => { out.textContent = ''; const p = document.createElement('p'); p.textContent = t; out.appendChild(p); };
+f.addEventListener('submit', async e => {
+  e.preventDefault();
+  const phone = document.getElementById('phone').value.replace(/\D/g, '');
+  if (phone.length !== 9 && !(phone.length === 11 && phone.startsWith('48'))) { say('Proszę wpisać 9 cyfr numeru telefonu.'); return; }
+  go.disabled = true; say('Sprawdzamy...');
+  try {
+    const r = await fetch(URL_BASE + '/rest/v1/rpc/track_lookup', {
+      method: 'POST',
+      headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_phone: phone })
+    });
+    if (!r.ok) { say('Zbyt wiele prób albo chwilowy problem. Proszę spróbować później.'); return; }
+    const rows = await r.json();
+    if (!rows.length) { say('Nie widzimy wysłanej paczki na ten numer. Lista obejmuje paczki nadane od 3 listopada.'); return; }
+    out.textContent = '';
+    rows.forEach(x => {
+      const a = document.createElement('a');
+      a.className = 'parcel'; a.target = '_blank'; a.rel = 'noopener';
+      a.href = 'https://tracktrace.dpd.com.pl/parcelDetails?typ=1&p1=' + encodeURIComponent(x.parcel_no);
+      const b = document.createElement('b'); b.textContent = 'Paczka ' + x.parcel_no;
+      const s = document.createElement('small'); s.textContent = 'Etykieta z ' + x.sent_date.split('-').reverse().join('.') + ' · kliknij, aby zobaczyć status w DPD';
+      a.append(b, s); out.appendChild(a);
+    });
+  } catch (err) { say('Chwilowy problem z połączeniem. Proszę spróbować później.'); }
+  finally { go.disabled = false; }
+});
+</script>
+</body>
+</html>
