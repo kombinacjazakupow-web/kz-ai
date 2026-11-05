@@ -3,23 +3,24 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
 import {
-  cleanVariants, colorViews, freshBadge, isSoldOut, orderCatalog, stockForColor, variantError,
+  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
-import { buyerLine, hasSavedBuyer } from './checkout.js';
-import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
-import { reelItems } from './rolki.js';
+import { buyerLine, savedBuyerOk } from './checkout.js';
+import { LOS_HOME_KEY, keepSlogan, openHomeSurprise } from './los.js';
+import { reelItems, reelOnScreen } from './rolki.js';
 import { INSTALL_HIDE_KEY, installKind } from './install.js';
+import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
-  accountEmptyText, claimCode, claimMessage, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
+  accountEmptyText, claimCode, claimMessage, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
 } from './account.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -60,10 +61,12 @@ const state = {
   accountLinks: [],
   accountOrders: [],
   accountNote: '',
+  accountDraft: { email: '', phone: '', orderNo: '' },
   accountBusy: false,
   magicSent: false,
   promoOpen: false,
   promoDismissed: false,
+  losLine: { home: '', thanks: '' },
 };
 
 let accountGen = 0;
@@ -185,16 +188,16 @@ function stockOf(product, color) {
   return stockForColor(product, state.variants, color ?? state.pick.color);
 }
 
-function heldQty(productId) {
-  return state.basket.reduce((sum, line) => (
-    String(line.product_id) === String(productId) ? sum + (Number(line.qty) || 0) : sum
-  ), 0);
+function addRoom(product, color = state.pick.color) {
+  const held = colorBasket(state.basket, product?.id, color);
+  const used = colorsShareStock(product, state.variants) ? held.same + held.other : held.same;
+  return roomForColor(stockOf(product, color), used);
 }
 
-function addRoom(product) {
-  const stock = stockOf(product);
-  if (stock == null) return 99;
-  return Math.max(0, Math.min(99, Math.floor(stock)) - heldQty(product?.id));
+function allowanceFor(product, color) {
+  const held = colorBasket(state.basket, product?.id, color);
+  const other = colorsShareStock(product, state.variants) ? 0 : held.other;
+  return lineStock(stockOf(product, color), other);
 }
 
 function toast(msg, action) {
@@ -302,6 +305,7 @@ function catalogMain() {
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
     <p id="result-note" class="hint">${esc(resultNoteText())}</p>
     <div id="grid" class="grid">${gridHtml()}</div>
+    ${soonHtml()}
   </main>`;
 }
 
@@ -381,12 +385,14 @@ function productMain(code) {
   const slides = (filmSlide + (photos.length
     ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
     : '')) || `<span class="ph">${esc(letter(product.title))}</span>`;
-  const nav = photos.length > 1
+  const plan = slidePlan(Boolean(film), photos.length);
+  const labels = [...(film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
+  const nav = plan.controls
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
     : '';
-  const dots = photos.length > 1
-    ? `<div class="dots" id="dots">${photos.map((_, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="Zdjęcie ${i + 1}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
+  const dots = plan.controls
+    ? `<div class="dots" id="dots">${labels.map((label, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="${label}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
     : '';
   const badge = freshBadge(product, state.variants);
   const sold = isSoldOut(product, state.variants);
@@ -394,17 +400,15 @@ function productMain(code) {
   const left = addRoom(product);
   if (left > 0 && state.pick.qty > left) state.pick.qty = left;
   const max = Math.max(left, 1);
+  const heldHere = !sold && left < 1;
   const buy = sold
     ? '<p class="badge sold" style="position:static;display:inline-block">WYPRZEDANE</p>'
-    : left < 1
-    ? '<p>W koszyku jest już cały dostępny stan.</p>'
     : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${colorChips(product)}
-      <div class="stepper" aria-label="Ilość">
+      ${heldHere ? '<p>W koszyku jest już cały dostępny stan.</p>' : `<div class="stepper" aria-label="Ilość">
         <button type="button" data-act="pqty" data-dir="-1" aria-label="Mniej" ${state.pick.qty <= 1 ? 'disabled' : ''}>−</button>
         <span id="pqty">${esc(String(state.pick.qty))}</span>
         <button type="button" data-act="pqty" data-dir="1" aria-label="Więcej" ${state.pick.qty >= max ? 'disabled' : ''}>+</button>
-      </div>
-      `;
+      </div>`}`;
   const desc = String(product.description || '').trim();
   return `<main class="product-page">
     <p><a class="back" href="#/">← Sklep</a></p>
@@ -418,7 +422,7 @@ function productMain(code) {
     ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
     ${desc ? `<p class="desc">${esc(desc)}</p>` : ''}
     ${buy}
-    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || left < 1 ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold || left < 1))}</button></div>
+    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
   </main>`;
 }
 
@@ -542,7 +546,7 @@ function checkoutMain() {
 }
 
 function buyerFields(draft, err) {
-  if (hasSavedBuyer(draft) && !state.editBuyer) {
+  if (savedBuyerOk(draft) && !state.editBuyer) {
     const hidden = ['name', 'phone', 'email', 'street', 'postcode', 'city']
       .map((key) => `<input type="hidden" name="${key}" value="${esc(draft[key] || '')}">`)
       .join('');
@@ -558,6 +562,26 @@ function buyerFields(draft, err) {
       ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
       ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
       ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
+}
+
+function readInterest() {
+  if (Array.isArray(state.interest)) return state.interest;
+  const stored = readJson(INTEREST_KEY, []);
+  state.interest = Array.isArray(stored) ? stored : [];
+  return state.interest;
+}
+
+function soonHtml() {
+  const saved = readInterest();
+  const cards = SOON.map((item) => {
+    const on = saved.includes(item.id);
+    return `<article class="soon-card">
+      <h3>${esc(item.title)}</h3>
+      <p>${esc(item.text)}</p>
+      <button type="button" class="btn" data-act="interest" data-id="${esc(item.id)}" aria-pressed="${on ? 'true' : 'false'}">${on ? 'Zapisane na tym telefonie' : 'Daj mi znać'}</button>
+    </article>`;
+  }).join('');
+  return `<section class="soon"><h2>Wkrótce</h2>${cards}</section>`;
 }
 
 function installCard() {
@@ -586,7 +610,7 @@ function reelsMain() {
   const cards = films.map((item) => {
     const code = encodeURIComponent(String(item.code || ''));
     return `<section class="reel">
-      <video muted playsinline loop autoplay src="${esc(videoSrc(item.video_url))}"></video>
+      <video muted playsinline loop src="${esc(videoSrc(item.video_url))}"></video>
       <a class="reel-back" href="#/">← Sklep</a>
       <div class="reel-bar">
         <p class="reel-title">${esc(item.title || 'Produkt')}</p>
@@ -606,14 +630,15 @@ function homeSurpriseHtml() {
   if (next.mark) {
     try { sessionStorage.setItem(LOS_HOME_KEY, '1'); } catch { /* private mode still shows it in this paint */ }
   }
-  return next.show ? losCard() : '';
+  return next.show ? losCard('home') : '';
 }
 
-function losCard() {
-  return `<button type="button" class="los" data-act="los" aria-pressed="false" aria-label="${esc(LUCKY_LABEL)}">
+function losCard(place) {
+  const line = state.losLine?.[place] || '';
+  return `<button type="button" class="los${line ? ' flipped' : ''}" data-act="los" data-place="${place}" aria-pressed="${line ? 'true' : 'false'}" aria-label="${esc(LUCKY_LABEL)}">
     <span class="los-inner">
       <span class="los-face los-front"><small>Niespodzianka</small><b>${esc(LUCKY_LABEL)}</b></span>
-      <span class="los-face los-back"></span>
+      <span class="los-face los-back">${esc(line)}</span>
     </span>
   </button>`;
 }
@@ -642,7 +667,7 @@ function thanksMain(order) {
     <p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(order.order_no)}">Kopiuj numer</button></p>
     <div class="paybox">${rows}</div>
     ${proofBox(order.order_no, order.phone)}
-    ${losCard()}
+    ${losCard('thanks')}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
   </main>`;
@@ -716,7 +741,7 @@ function accountLogin() {
     ${accountNoteHtml()}
     <p class="service">${esc(SERVICE_LINE)}</p>
     <form id="magic-link">
-      ${field('email', 'E-mail', '', 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
+      ${field('email', 'E-mail', state.accountDraft.email, 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
       <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
     </form>
   </main>`;
@@ -734,8 +759,8 @@ function accountOrdersView() {
     ? ''
     : `<form id="claim-order">
         <p class="hint">Podaj telefon i numer jednego zamówienia (KS albo Selmo), żeby pokazać resztę.</p>
-        ${field('claim-phone', 'Telefon', '', 'tel', '', 'inputmode="tel" autocomplete="tel"')}
-        ${field('claim-no', 'Numer zamówienia', '', 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="40"')}
+        ${field('claim-phone', 'Telefon', state.accountDraft.phone, 'tel', '', 'inputmode="tel" autocomplete="tel"')}
+        ${field('claim-no', 'Numer zamówienia', state.accountDraft.orderNo, 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="40"')}
         <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Pokaż zamówienia</button>
       </form>`;
   return `<main>
@@ -823,9 +848,19 @@ async function loadAccount() {
   paint({ keep: true });
 }
 
+function rememberAccount(form) {
+  if (!form) return;
+  if (form.id === 'magic-link') state.accountDraft.email = String(form.elements.namedItem('email')?.value || '');
+  if (form.id === 'claim-order') {
+    state.accountDraft.phone = String(form.elements.namedItem('claim-phone')?.value || '');
+    state.accountDraft.orderNo = String(form.elements.namedItem('claim-no')?.value || '');
+  }
+}
+
 async function sendMagic(form) {
   if (state.accountBusy) return;
-  const email = String(form.elements.namedItem('email')?.value || '').trim();
+  rememberAccount(form);
+  const email = state.accountDraft.email.trim();
   if (!emailOk(email)) {
     state.accountNote = 'Podaj adres e-mail.';
     state.magicSent = false;
@@ -849,8 +884,9 @@ async function sendMagic(form) {
 
 async function claimOrders(form) {
   if (state.accountBusy) return;
-  const phone = String(form.elements.namedItem('claim-phone')?.value || '');
-  const orderNo = String(form.elements.namedItem('claim-no')?.value || '').trim();
+  rememberAccount(form);
+  const phone = state.accountDraft.phone;
+  const orderNo = state.accountDraft.orderNo.trim();
   if (!phoneOk(phone) || !orderNo) {
     state.accountNote = claimMessage('input');
     paint({ keep: true });
@@ -914,13 +950,7 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
-  document.querySelectorAll('img[data-fallback]').forEach((img) => {
-    img.addEventListener('load', () => img.classList.add('in'));
-    img.addEventListener('error', () => {
-      const fallback = img.dataset.fallback || '';
-      if (fallback && img.src !== fallback) img.src = fallback;
-    }, { once: true });
-  });
+  watchReels();
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
   if (!gallery || !dots) return;
@@ -928,10 +958,32 @@ function afterPaint() {
     const index = Math.round(gallery.scrollLeft / Math.max(gallery.clientWidth, 1));
     dots.querySelectorAll('button').forEach((button, i) => button.classList.toggle('on', i === index));
     const live = document.getElementById('gal-live');
-    if (live) live.textContent = `Zdjęcie ${index + 1} z ${dots.children.length}`;
+    if (live) {
+      const label = dots.children[index]?.getAttribute('aria-label') || '';
+      live.textContent = label ? `${label}, ${index + 1} z ${dots.children.length}` : '';
+    }
   };
   gallery.addEventListener('scroll', mark, { passive: true });
   mark();
+}
+
+function watchReels() {
+  const root = document.querySelector('main.reels');
+  if (!root) return;
+  const videos = [...root.querySelectorAll('video')];
+  if (!videos.length) return;
+  if (typeof IntersectionObserver !== 'function') {
+    videos[0].play().catch(() => {});
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const video = entry.target;
+      if (reelOnScreen(entry.intersectionRatio) && entry.isIntersecting) video.play().catch(() => {});
+      else video.pause();
+    }
+  }, { root, threshold: [0, 0.6, 1] });
+  videos.forEach((video) => observer.observe(video));
 }
 
 function scrollGallery(dir) {
@@ -990,6 +1042,9 @@ async function placeOrder(form) {
   const checked = validateCheckout(input, lines);
   const stockMsg = state.loaded ? stockProblem(lines, state.products) : '';
   if (!checked.ok || stockMsg) {
+    if (['name', 'phone', 'email', 'street', 'postcode', 'city'].some((key) => checked.errors[key])) {
+      state.editBuyer = true;
+    }
     state.fieldErrors = checked.errors;
     state.formError = stockMsg || '';
     if (stockMsg) state.fieldErrors = { ...checked.errors, items: checked.errors.items || stockMsg };
@@ -1069,6 +1124,7 @@ function addCurrent() {
   if (colors.length && !state.pick.color) { toast('Wybierz kolor.'); return; }
   const stock = stockOf(product, state.pick.color);
   if (stock != null && stock <= 0) { toast('Wyprzedane.'); return; }
+  const allowance = allowanceFor(product, state.pick.color);
   const result = upsertLine(state.basket, {
     product_id: product.id,
     code: String(product.code || ''),
@@ -1078,8 +1134,9 @@ function addCurrent() {
     size: state.pick.size || '',
     color: state.pick.color || '',
     photo: photoList(product)[0] || '',
-  }, stock == null ? undefined : stock);
+  }, allowance);
   setBasket(result.lines);
+  paint({ keep: true });
   const count = document.getElementById('cart-count');
   const n = countPieces();
   if (count) count.textContent = n ? String(n) : '';
@@ -1114,11 +1171,9 @@ function onClick(event) {
   }
   if (act === 'los') {
     const card = target.closest('.los');
-    const back = card?.querySelector('.los-back');
-    if (!card || !back) return;
-    back.textContent = pickSlogan();
-    card.classList.add('flipped');
-    card.setAttribute('aria-pressed', 'true');
+    const place = card?.dataset.place === 'thanks' ? 'thanks' : 'home';
+    state.losLine[place] = keepSlogan(state.losLine[place], pickSlogan());
+    paint({ keep: true });
     return;
   }
   if (act === 'gal') { scrollGallery(Number(target.dataset.dir) || 1); return; }
@@ -1129,6 +1184,12 @@ function onClick(event) {
     return;
   }
   if (act === 'install') { offerInstallPrompt(); return; }
+  if (act === 'interest') {
+    state.interest = toggleInterest(readInterest(), target.dataset.id || '');
+    writeJson(INTEREST_KEY, state.interest);
+    paint({ keep: true });
+    return;
+  }
   if (act === 'install-hide') {
     state.installHide = true;
     try { localStorage.setItem(INSTALL_HIDE_KEY, '1'); } catch { /* the card stays hidden for this visit */ }
@@ -1152,7 +1213,11 @@ function onClick(event) {
       : colorViews(product, state.variants).filter((view) => view.stock == null || view.stock > 0).map((view) => view.name);
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
-    else state.pick.color = chosen;
+    else {
+      state.pick.color = chosen;
+      paint({ keep: true });
+      return;
+    }
     document.querySelectorAll('[data-act="pick"]').forEach((button) => {
       const selected = button.dataset.kind === 'size' ? state.pick.size : state.pick.color;
       const on = button.dataset.kind === kind ? button.dataset.val === chosen : button.dataset.val === selected;
@@ -1179,9 +1244,9 @@ function onClick(event) {
     const key = target.dataset.key || '';
     const line = state.basket.find((item) => lineKey(item) === key);
     const product = line ? productById(line.product_id) : null;
-    const stock = product ? stockOf(product, line.color) : null;
-    if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, stock == null ? undefined : stock));
-    else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), stock == null ? undefined : stock));
+    const allowance = product ? allowanceFor(product, line.color) : undefined;
+    if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
+    else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
     paint({ keep: true });
     return;
   }
@@ -1200,6 +1265,7 @@ function onInput(event) {
   }
   const form = el.form;
   if (form && form.id === 'checkout') saveDraft(readCheckout(form));
+  if (form && (form.id === 'magic-link' || form.id === 'claim-order')) rememberAccount(form);
 }
 
 function onChange(event) {
@@ -1370,6 +1436,16 @@ function start() {
   state.thanks = loadThanks();
   try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
   const root = document.getElementById('app');
+  root.addEventListener('load', (event) => {
+    const img = event.target;
+    if (img?.tagName === 'IMG') img.classList.add('in');
+  }, true);
+  root.addEventListener('error', (event) => {
+    const img = event.target;
+    if (img?.tagName !== 'IMG') return;
+    const fallback = img.dataset.fallback || '';
+    if (fallback && img.getAttribute('src') !== fallback) img.src = fallback;
+  }, true);
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
@@ -1386,13 +1462,14 @@ function start() {
   const authError = new URLSearchParams(location.search);
   if (authError.get('error') || authError.get('error_description')) {
     state.accountNote = 'Link logowania wygasł albo jest niepoprawny. Wyślij nowy.';
+    if (parseRoute(location.hash).name !== 'account') location.hash = '#/konto';
   }
   state.loading = true;
   booted = true;
   paint();
   loadProducts();
   sb.auth.onAuthStateChange((event, session) => {
-    if (event === 'TOKEN_REFRESHED') {
+    if (event === 'TOKEN_REFRESHED' || ignoreSameSignIn(event, state.session?.user?.id, session?.user?.id)) {
       state.session = session;
       return;
     }
@@ -1433,12 +1510,14 @@ if (typeof window !== 'undefined') {
     state.installReady = true;
     const button = document.getElementById('install');
     if (button) button.hidden = false;
+    if (booted) paint({ keep: true });
   });
   window.addEventListener('appinstalled', () => {
     state.installEvent = null;
     state.installReady = false;
     const button = document.getElementById('install');
     if (button) button.hidden = true;
+    if (booted) paint({ keep: true });
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
