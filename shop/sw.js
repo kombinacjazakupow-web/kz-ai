@@ -1,32 +1,9 @@
 // Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
-const CACHE = 'kombi-sklep-shell-v11';
-const SHELL = [
-  './',
-  './index.html',
-  './shop.css',
-  './shop.js',
-  './common.js',
-  './account.js',
-  './variants.js',
-  './window.js',
-  './buy.js',
-  './checkout.js',
-  './los.js',
-  './rolki.js',
-  './install.js',
-  './soon.js',
-  './admin.html',
-  './admin.js',
-  './regulamin.html',
-  './prywatnosc.html',
-  './zwroty.html',
-  './manifest.webmanifest',
-  './icon.svg',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-maskable-192.png',
-  './icon-maskable-512.png',
-];
+// This worker stores the listed shop files and never stores Supabase
+// responses, so prices, stock and orders are not kept in the cache.
+import { SHELL, shellAction } from './shell-policy.js';
+
+const CACHE = 'kombi-sklep-shell-v12';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -47,18 +24,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  if (url.hostname.endsWith('supabase.co') || url.hostname.includes('supabase')) return;
-  if (url.origin !== self.location.origin || url.search) return;
-  if (!isShell(url)) return;
-  event.respondWith(networkFirst(req));
+  const action = shellAction({
+    url: event.request.url,
+    method: event.request.method,
+    origin: self.location.origin,
+    scope: self.registration.scope,
+    shell: SHELL,
+  });
+  if (action !== 'shell') return;
+  event.respondWith(networkFirst(event.request));
 });
-
-function isShell(url) {
-  return SHELL.some((item) => new URL(item, self.registration.scope).pathname === url.pathname);
-}
 
 async function networkFirst(req) {
   const cache = await caches.open(CACHE);

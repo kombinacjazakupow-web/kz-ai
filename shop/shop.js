@@ -1520,9 +1520,11 @@ if (typeof window !== 'undefined') {
     if (booted) paint({ keep: true });
   });
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
-    });
+    const registerShopWorker = () => {
+      navigator.serviceWorker.register('./sw.js', { scope: './', type: 'module' }).catch(() => {});
+    };
+    if (document.readyState === 'complete') registerShopWorker();
+    else window.addEventListener('load', registerShopWorker);
   }
 }
 

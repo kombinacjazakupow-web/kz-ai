@@ -34,7 +34,8 @@ assert.ok(manifest.icons.some((icon) => icon.sizes === '512x512' && icon.purpose
 assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable' && icon.sizes === '512x512'));
 
 const worker = readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
-assert.match(worker, /supabase\.co/);
+const policy = readFileSync(new URL('./shell-policy.js', import.meta.url), 'utf8');
+assert.match(policy, /supabase\.co/);
 assert.match(worker, /kombi-sklep-shell-/);
 assert.match(worker, /startsWith\('kombi-sklep-shell-'\)/);
 assert.doesNotMatch(worker, /kombi-shell-v/);
