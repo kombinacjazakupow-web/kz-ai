@@ -61,6 +61,7 @@ const state = {
   accountLinks: [],
   accountOrders: [],
   accountNote: '',
+  accountDraft: { email: '', phone: '', orderNo: '' },
   accountBusy: false,
   magicSent: false,
   promoOpen: false,
@@ -740,7 +741,7 @@ function accountLogin() {
     ${accountNoteHtml()}
     <p class="service">${esc(SERVICE_LINE)}</p>
     <form id="magic-link">
-      ${field('email', 'E-mail', '', 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
+      ${field('email', 'E-mail', state.accountDraft.email, 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
       <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
     </form>
   </main>`;
@@ -758,8 +759,8 @@ function accountOrdersView() {
     ? ''
     : `<form id="claim-order">
         <p class="hint">Podaj telefon i numer jednego zamówienia (KS albo Selmo), żeby pokazać resztę.</p>
-        ${field('claim-phone', 'Telefon', '', 'tel', '', 'inputmode="tel" autocomplete="tel"')}
-        ${field('claim-no', 'Numer zamówienia', '', 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="40"')}
+        ${field('claim-phone', 'Telefon', state.accountDraft.phone, 'tel', '', 'inputmode="tel" autocomplete="tel"')}
+        ${field('claim-no', 'Numer zamówienia', state.accountDraft.orderNo, 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="40"')}
         <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Pokaż zamówienia</button>
       </form>`;
   return `<main>
@@ -847,9 +848,19 @@ async function loadAccount() {
   paint({ keep: true });
 }
 
+function rememberAccount(form) {
+  if (!form) return;
+  if (form.id === 'magic-link') state.accountDraft.email = String(form.elements.namedItem('email')?.value || '');
+  if (form.id === 'claim-order') {
+    state.accountDraft.phone = String(form.elements.namedItem('claim-phone')?.value || '');
+    state.accountDraft.orderNo = String(form.elements.namedItem('claim-no')?.value || '');
+  }
+}
+
 async function sendMagic(form) {
   if (state.accountBusy) return;
-  const email = String(form.elements.namedItem('email')?.value || '').trim();
+  rememberAccount(form);
+  const email = state.accountDraft.email.trim();
   if (!emailOk(email)) {
     state.accountNote = 'Podaj adres e-mail.';
     state.magicSent = false;
@@ -873,8 +884,9 @@ async function sendMagic(form) {
 
 async function claimOrders(form) {
   if (state.accountBusy) return;
-  const phone = String(form.elements.namedItem('claim-phone')?.value || '');
-  const orderNo = String(form.elements.namedItem('claim-no')?.value || '').trim();
+  rememberAccount(form);
+  const phone = state.accountDraft.phone;
+  const orderNo = state.accountDraft.orderNo.trim();
   if (!phoneOk(phone) || !orderNo) {
     state.accountNote = claimMessage('input');
     paint({ keep: true });
@@ -1253,6 +1265,7 @@ function onInput(event) {
   }
   const form = el.form;
   if (form && form.id === 'checkout') saveDraft(readCheckout(form));
+  if (form && (form.id === 'magic-link' || form.id === 'claim-order')) rememberAccount(form);
 }
 
 function onChange(event) {
@@ -1449,6 +1462,7 @@ function start() {
   const authError = new URLSearchParams(location.search);
   if (authError.get('error') || authError.get('error_description')) {
     state.accountNote = 'Link logowania wygasł albo jest niepoprawny. Wyślij nowy.';
+    if (parseRoute(location.hash).name !== 'account') location.hash = '#/konto';
   }
   state.loading = true;
   booted = true;
