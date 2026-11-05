@@ -1510,12 +1510,14 @@ if (typeof window !== 'undefined') {
     state.installReady = true;
     const button = document.getElementById('install');
     if (button) button.hidden = false;
+    if (booted) paint({ keep: true });
   });
   window.addEventListener('appinstalled', () => {
     state.installEvent = null;
     state.installReady = false;
     const button = document.getElementById('install');
     if (button) button.hidden = true;
+    if (booted) paint({ keep: true });
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
