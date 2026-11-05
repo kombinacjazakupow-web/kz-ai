@@ -14,7 +14,7 @@ import {
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
 import { buyerLine, savedBuyerOk } from './checkout.js';
-import { LOS_HOME_KEY, openHomeSurprise } from './los.js';
+import { LOS_HOME_KEY, keepSlogan, openHomeSurprise } from './los.js';
 import { reelItems, reelOnScreen } from './rolki.js';
 import { INSTALL_HIDE_KEY, installKind } from './install.js';
 import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
@@ -65,6 +65,7 @@ const state = {
   magicSent: false,
   promoOpen: false,
   promoDismissed: false,
+  losLine: { home: '', thanks: '' },
 };
 
 let accountGen = 0;
@@ -628,14 +629,15 @@ function homeSurpriseHtml() {
   if (next.mark) {
     try { sessionStorage.setItem(LOS_HOME_KEY, '1'); } catch { /* private mode still shows it in this paint */ }
   }
-  return next.show ? losCard() : '';
+  return next.show ? losCard('home') : '';
 }
 
-function losCard() {
-  return `<button type="button" class="los" data-act="los" aria-pressed="false" aria-label="${esc(LUCKY_LABEL)}">
+function losCard(place) {
+  const line = state.losLine?.[place] || '';
+  return `<button type="button" class="los${line ? ' flipped' : ''}" data-act="los" data-place="${place}" aria-pressed="${line ? 'true' : 'false'}" aria-label="${esc(LUCKY_LABEL)}">
     <span class="los-inner">
       <span class="los-face los-front"><small>Niespodzianka</small><b>${esc(LUCKY_LABEL)}</b></span>
-      <span class="los-face los-back"></span>
+      <span class="los-face los-back">${esc(line)}</span>
     </span>
   </button>`;
 }
@@ -664,7 +666,7 @@ function thanksMain(order) {
     <p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(order.order_no)}">Kopiuj numer</button></p>
     <div class="paybox">${rows}</div>
     ${proofBox(order.order_no, order.phone)}
-    ${losCard()}
+    ${losCard('thanks')}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
   </main>`;
@@ -1157,11 +1159,9 @@ function onClick(event) {
   }
   if (act === 'los') {
     const card = target.closest('.los');
-    const back = card?.querySelector('.los-back');
-    if (!card || !back) return;
-    back.textContent = pickSlogan();
-    card.classList.add('flipped');
-    card.setAttribute('aria-pressed', 'true');
+    const place = card?.dataset.place === 'thanks' ? 'thanks' : 'home';
+    state.losLine[place] = keepSlogan(state.losLine[place], pickSlogan());
+    paint({ keep: true });
     return;
   }
   if (act === 'gal') { scrollGallery(Number(target.dataset.dir) || 1); return; }

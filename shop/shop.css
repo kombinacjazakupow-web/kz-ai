@@ -138,15 +138,16 @@ img { max-width: 100%; }
   text-align: center;
 }
 .los-inner {
-  position: relative;
+  display: grid;
   min-height: 96px;
   transform-style: preserve-3d;
   transition: transform .45s ease;
 }
 .los.flipped .los-inner { transform: rotateY(180deg); }
 .los-face {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
+  position: relative;
+  min-height: 96px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -157,6 +158,7 @@ img { max-width: 100%; }
   background: var(--cream);
   color: var(--ink);
   backface-visibility: hidden;
+  overflow-wrap: anywhere;
   font-family: var(--serif);
   font-size: 20px;
   line-height: 1.3;
