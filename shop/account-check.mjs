@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  accountEmptyText, claimMessage, clientStatus, emailOk, mergeAccountOrders, orderSourceLabel, promoProduct,
+  accountEmptyText, claimMessage, clientStatus, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct,
   shouldShowPromo, trackUrl, PROMO_CODE, SERVICE_LINE,
 } from './account.js';
 import { BLIK_COPY, TRANSFER_COPY, SLOGANS, parseRoute } from './common.js';
@@ -34,6 +34,10 @@ assert.equal(claimMessage('login'), 'Zaloguj się jeszcze raz.');
 assert.equal(claimMessage({ shop_claim_orders: 'nomatch' }), 'Nie znaleźliśmy zamówienia z tym telefonem i numerem.');
 assert.match(claimMessage('other'), /Spróbuj jeszcze raz/);
 
+assert.equal(ignoreSameSignIn('SIGNED_IN', 'user-1', 'user-1'), true);
+assert.equal(ignoreSameSignIn('SIGNED_IN', '', 'user-1'), false);
+assert.equal(ignoreSameSignIn('SIGNED_IN', 'user-1', 'user-2'), false);
+assert.equal(ignoreSameSignIn('SIGNED_OUT', 'user-1', ''), false);
 assert.equal(accountEmptyText(0), 'Nie masz jeszcze zamówień na tym koncie.');
 assert.equal(accountEmptyText(2), '');
 assert.equal(SERVICE_LINE, 'WhatsApp Obsługa Klienta +48 792 402 881');

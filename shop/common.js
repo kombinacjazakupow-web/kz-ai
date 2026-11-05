@@ -85,11 +85,8 @@ export function photoUrl(path) {
   return `${SUPABASE_URL}/storage/v1/object/public/shop-photos/${encoded}`;
 }
 
-export function photoSrc(path, width) {
-  const full = photoUrl(path);
-  if (!full) return '';
-  const size = Number(width) >= 600 ? 800 : Number(width) <= 40 ? 32 : 400;
-  return `${full.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/')}?width=${size}&quality=68&resize=cover`;
+export function photoSrc(path) {
+  return photoUrl(path);
 }
 
 const PROOF_TYPES = {
@@ -105,6 +102,12 @@ export function videoSrc(value) {
   if (!raw) return '';
   if (/^https:\/\/[^\s"'<>]+$/i.test(raw)) return raw;
   return photoUrl(raw);
+}
+
+export function slidePlan(hasFilm, photoCount) {
+  const photos = Math.max(0, Math.floor(Number(photoCount)) || 0);
+  const total = (hasFilm ? 1 : 0) + photos;
+  return { total, controls: total > 1 };
 }
 
 export function proofKind(file) {

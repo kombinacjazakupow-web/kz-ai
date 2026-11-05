@@ -65,6 +65,36 @@ export function orderCatalog(products, variants) {
   return [...open, ...sold];
 }
 
+export function colorBasket(lines, productId, color) {
+  let same = 0;
+  let other = 0;
+  const id = String(productId || '');
+  const want = String(color || '');
+  for (const line of lines || []) {
+    if (String(line?.product_id || '') !== id) continue;
+    const qty = Math.round(Number(line?.qty)) || 0;
+    if (String(line?.color || '') === want) same += qty;
+    else other += qty;
+  }
+  return { same, other };
+}
+
+export function roomForColor(stock, sameQty) {
+  if (stock == null || !Number.isFinite(Number(stock))) return 99;
+  return Math.max(0, Math.min(99, Math.floor(Number(stock))) - (Math.round(Number(sameQty)) || 0));
+}
+
+export function lineStock(stock, otherQty) {
+  if (stock == null || !Number.isFinite(Number(stock))) return undefined;
+  return Math.floor(Number(stock)) + (Math.round(Number(otherQty)) || 0);
+}
+
+export function colorsShareStock(product, variants) {
+  if (!splitList(product?.colors).length) return false;
+  const id = String(product?.id || '');
+  return !(Array.isArray(variants) ? variants : []).some((row) => String(row?.product_id || '') === id);
+}
+
 export function stockForColor(product, variants, color) {
   const views = colorViews(product, variants);
   const hit = views.find((view) => view.name === String(color || ''));
