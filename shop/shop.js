@@ -450,7 +450,7 @@ function productMain(code) {
   const heldHere = !sold && left < 1;
   const buy = sold
     ? '<p class="badge sold" style="position:static;display:inline-block">WYPRZEDANE</p>'
-    : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${colorChips(product)}
+    : `${chips('size', 'Rozmiar', sizes, state.pick.size)}
       ${heldHere ? '<p>W koszyku jest już cały dostępny stan.</p>' : `<div class="stepper" aria-label="Ilość">
         <button type="button" data-act="pqty" data-dir="-1" aria-label="Mniej" ${state.pick.qty <= 1 ? 'disabled' : ''}>−</button>
         <span id="pqty">${esc(String(state.pick.qty))}</span>
@@ -464,17 +464,28 @@ function productMain(code) {
     </div>
     ${dots}`
     : '';
+  const lead = `<h1>${esc(product.title || 'Produkt')}</h1>
+    <p class="price">${esc(formatZl(product.price))}</p>
+    ${badge && !sold ? `<p class="product-badge"><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}`;
+  const bar = `<div class="buybar">${colorBar(product)}<button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>`;
+  const story = `${gallery}${liveSection(product)}${desc ? `<p class="desc">${esc(desc)}</p>` : ''}${buy}`;
+  if (hanger) {
+    return `<main class="product-page hanger-page">
+      <p class="backline"><a class="back" href="#/">← Sklep</a></p>
+      ${hangerPair(product, hanger)}
+      ${lead}
+      ${story}
+      ${bar}
+    </main>`;
+  }
   return `<main class="product-page">
     <p><a class="back" href="#/">← Sklep</a></p>
-    ${hanger ? hangerPair(product, hanger) : ''}
     ${gallery}
     ${liveSection(product)}
-    <h1>${esc(product.title || 'Produkt')}</h1>
-    <p class="price">${esc(formatZl(product.price))}</p>
-    ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
+    ${lead}
     ${desc ? `<p class="desc">${esc(desc)}</p>` : ''}
     ${buy}
-    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
+    ${bar}
   </main>`;
 }
 
@@ -536,18 +547,18 @@ function mountFacebook(host, title) {
   host.replaceChildren(frame);
 }
 
-function colorChips(product) {
+function colorBar(product) {
   const views = colorViews(product, state.variants);
   if (!views.length) return '';
   const buttons = views.map((view) => {
     const gone = view.stock === 0;
     const on = !gone && view.name === state.pick.color;
     if (gone) {
-      return `<button type="button" class="chip gone" disabled aria-pressed="false"><s>${esc(view.name)}</s> wyprzedane</button>`;
+      return `<button type="button" class="chip gone" disabled aria-pressed="false" aria-label="${esc(view.name)}, wyprzedane"><s>${esc(view.name)}</s></button>`;
     }
     return `<button type="button" class="chip${on ? ' on' : ''}" data-act="pick" data-kind="color" data-val="${esc(view.name)}" aria-pressed="${on ? 'true' : 'false'}">${esc(view.name)}</button>`;
   }).join('');
-  return `<fieldset class="chips"><legend>Kolor</legend><div class="chip-row">${buttons}</div></fieldset>`;
+  return `<div class="color-scroll" role="group" aria-label="Kolor">${buttons}</div>`;
 }
 
 function chips(kind, label, options, selected) {
@@ -1967,7 +1978,7 @@ if (typeof window !== 'undefined') {
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=14', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=15', { scope: './' }).catch(() => {});
     });
   }
 }
