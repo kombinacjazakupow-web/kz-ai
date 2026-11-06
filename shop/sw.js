@@ -1,11 +1,12 @@
 // Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
-const CACHE = 'kombi-sklep-shell-v1';
+const CACHE = 'kombi-sklep-shell-v2';
 const SHELL = [
   './',
   './index.html',
   './shop.css',
   './shop.js',
   './common.js',
+  './account.js',
   './admin.html',
   './admin.js',
   './regulamin.html',
