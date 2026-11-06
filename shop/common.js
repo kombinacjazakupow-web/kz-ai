@@ -10,6 +10,7 @@ export const BLIK_LINE = 'BLIK na telefon: 796 669 157 (Fikrie Ali)';
 export const TRANSFER_LINE = 'Przelew: PL24 2910 0006 0000 0000 0571 2568 (Sergen Kushdan)';
 export const BLIK_COPY = '796 669 157';
 export const TRANSFER_COPY = 'PL24 2910 0006 0000 0000 0571 2568';
+export const FACEBOOK_LOGIN = false;
 
 export const BASKET_KEY = 'kombi-shop-basket';
 export const DRAFT_KEY = 'kombi-shop-draft';

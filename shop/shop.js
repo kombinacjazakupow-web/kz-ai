@@ -3,7 +3,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket, FACEBOOK_LOGIN,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookClip, facebookPlayer, soldShopLine,
@@ -830,6 +830,7 @@ function accountLogin() {
     <p class="hint">Wyślemy link do logowania na e-mail. Hasło nie jest potrzebne.</p>
     ${accountNoteHtml()}
     <p class="service">${esc(SERVICE_LINE)}</p>
+    ${FACEBOOK_LOGIN ? '<p><button type="button" class="btn block" data-act="facebook">Zaloguj przez Facebooka</button></p>' : ''}
     <form id="magic-link">
       ${field('email', 'E-mail', state.accountDraft.email, 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
       <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
@@ -1391,6 +1392,14 @@ function onClick(event) {
     if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
     else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
     paint({ keep: true });
+    return;
+  }
+  if (act === 'facebook') {
+    if (!FACEBOOK_LOGIN) return;
+    sb.auth.signInWithOAuth({
+      provider: 'facebook',
+      options: { redirectTo: location.origin + location.pathname },
+    });
     return;
   }
   if (act === 'reel-play') {
