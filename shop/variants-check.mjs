@@ -34,6 +34,15 @@ const manyRows = cleanVariants([
   { product_id: id, color: 'c', stock: 1 },
 ]);
 assert.equal(freshBadge(many, manyRows), '');
+const deep = { id, colors: 'czarny,ecru', stock: 10 };
+const deepRows = cleanVariants([
+  { product_id: id, color: 'czarny', stock: 5 },
+  { product_id: id, color: 'ecru', stock: 5 },
+]);
+assert.equal(freshBadge(deep, deepRows), '');
+const lastPieces = { id, colors: 'czarny', stock: 2 };
+assert.equal(freshBadge(lastPieces, cleanVariants([{ product_id: id, color: 'czarny', stock: 2 }])), 'ostatnie sztuki');
+assert.equal(freshBadge(lastPieces, cleanVariants([{ product_id: id, color: 'czarny', stock: 3 }])), '');
 
 const ordered = orderCatalog([gone, product], [...variants, ...goneRows]);
 assert.equal(ordered[0].id, id);

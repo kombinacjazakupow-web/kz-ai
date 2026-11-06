@@ -50,8 +50,8 @@ export function freshBadge(product, variants) {
   if (isSoldOut(product, variants)) return 'WYPRZEDANE';
   const views = colorViews(product, variants);
   if (!views.length || views.some((view) => view.stock == null)) return '';
-  const left = views.filter((view) => view.stock > 0).length;
-  if (left > 0 && left <= 2) return 'ostatnie sztuki';
+  const pieces = views.reduce((sum, view) => sum + Math.max(0, Number(view.stock) || 0), 0);
+  if (pieces > 0 && pieces <= 2) return 'ostatnie sztuki';
   return '';
 }
 
