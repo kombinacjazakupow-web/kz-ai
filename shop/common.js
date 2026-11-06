@@ -107,6 +107,15 @@ export function videoSrc(value) {
   return photoUrl(raw);
 }
 
+export function hangerSrc(value) {
+  const raw = String(value || '').trim();
+  let url;
+  try { url = new URL(raw); } catch { return ''; }
+  if (url.protocol !== 'https:' || url.username || url.password) return '';
+  if (url.hostname !== 'r2.selmo.io') return '';
+  return `${url.origin}${url.pathname}${url.search}`;
+}
+
 export function slidePlan(hasFilm, photoCount) {
   const photos = Math.max(0, Math.floor(Number(photoCount)) || 0);
   const total = (hasFilm ? 1 : 0) + photos;

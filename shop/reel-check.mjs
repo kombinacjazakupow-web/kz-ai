@@ -23,7 +23,7 @@ assert.equal(facebookPlayer('https://evil.example/reel/1', true), '');
 const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
 assert.match(shop, /facebookReel\(product\.reel_url\)/);
 assert.match(shop, /data-act="reel-play"/);
-assert.match(shop, /reel \? '' : videoSrc\(product\.video_url\)/);
+assert.match(shop, /hanger \|\| reel \? '' : videoSrc\(product\.video_url\)/);
 assert.doesNotMatch(shop, /plugins\/video\.php/);
 
 console.log('reel-check ok');

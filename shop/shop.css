@@ -211,6 +211,13 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
 .reel-title { margin: 0; color: #fff; font-family: var(--serif); font-size: 28px; }
 .reel-bar .btn { min-height: 48px; }
 .product-page { padding-bottom: 96px; }
+.hanger-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+.hanger-pair.solo { grid-template-columns: 1fr; }
+.hanger-panel { min-width: 0; }
+.hanger-panel h2 { margin: 0 0 6px; font-size: 16px; font-weight: 650; line-height: 1.2; }
+.hanger-photo, .hanger-photo .blurup, .hanger-photo img, .hanger-photo .ph { width: 100%; aspect-ratio: 9 / 16; }
+.hanger-sound { display: block; width: 100%; padding: 0; border: 0; border-radius: 12px; background: var(--brand-dark); cursor: pointer; }
+.hanger-video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 12px; background: var(--brand-dark); }
 .live-note { margin: 16px 0 8px; }
 .live-note h2 { margin: 0 0 8px; font-family: var(--serif); font-size: 28px; font-weight: 400; }
 .live-note a { display: inline-flex; align-items: center; min-height: 48px; }

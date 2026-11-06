@@ -10,9 +10,52 @@ export function cleanVariants(rows) {
     const color = String(row?.color || '').trim();
     const stock = Number(row?.stock);
     if (!productId || !color || !Number.isFinite(stock)) continue;
-    out.push({ product_id: productId, color, stock: Math.max(0, Math.floor(stock)) });
+    const seconds = Number(row?.video_seconds);
+    out.push({
+      product_id: productId,
+      color,
+      stock: Math.max(0, Math.floor(stock)),
+      video_seconds: Number.isFinite(seconds) && seconds >= 0 ? seconds : null,
+      ai_photo: safePhoto(row?.ai_photo),
+    });
   }
   return out;
+}
+
+function safePhoto(value) {
+  const raw = String(value || '').trim().replace(/^\/+/, '');
+  if (!raw || /[\\:?#]/.test(raw) || raw.includes('://')) return '';
+  if (raw.split('/').some((part) => !part || part === '.' || part === '..')) return '';
+  return raw;
+}
+
+export function modelPhoto(product, color, variants, hold = '') {
+  const mine = (Array.isArray(variants) ? variants : []).filter((row) => row.product_id === product?.id && row.ai_photo);
+  if (!mine.length) return { photo: '', hold: '' };
+  const want = String(color || '').trim().toLocaleLowerCase('pl');
+  if (want) {
+    const hit = mine.find((row) => row.color.toLocaleLowerCase('pl') === want);
+    if (hit) return { photo: hit.ai_photo, hold: hit.ai_photo };
+    const kept = safePhoto(hold);
+    return { photo: kept, hold: kept };
+  }
+  return { photo: mine[0].ai_photo, hold: mine[0].ai_photo };
+}
+
+export function colorMoment(product, color, variants) {
+  const want = String(color || '').trim().toLocaleLowerCase('pl');
+  if (!want) return null;
+  const hit = (Array.isArray(variants) ? variants : []).find((row) => row.product_id === product?.id && row.color.toLocaleLowerCase('pl') === want);
+  const seconds = Number(hit?.video_seconds);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+export function momentText(seconds) {
+  const n = Number(seconds);
+  if (!Number.isFinite(n) || n < 0) return '';
+  const whole = Math.floor(n);
+  const tenth = Math.min(9, Math.floor((n - whole) * 10));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')},${tenth}`;
 }
 
 export function colorViews(product, variants) {
