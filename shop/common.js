@@ -132,6 +132,21 @@ export function payPopup(order) {
   };
 }
 
+const FACEBOOK_REEL = /^https:\/\/www\.facebook\.com\/reel\/\d+$/;
+
+export function facebookReel(value) {
+  const raw = String(value || '').trim();
+  return FACEBOOK_REEL.test(raw) ? raw : '';
+}
+
+export function facebookPlayer(value, autoplay) {
+  const href = facebookReel(value);
+  if (!href) return '';
+  const params = new URLSearchParams({ href, show_text: 'false' });
+  if (autoplay) params.set('autoplay', 'true');
+  return `https://www.facebook.com/plugins/video.php?${params.toString()}`;
+}
+
 export function proofKind(file) {
   const name = String(file?.name || '').toLowerCase();
   const type = String(file?.type || '').toLowerCase();

@@ -6,7 +6,7 @@ import {
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
-  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup,
+  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookPlayer,
 } from '#common';
 import {
   cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
@@ -392,15 +392,18 @@ function productMain(code) {
   }
   syncPick(product);
   const photos = photoList(product);
-  const film = videoSrc(product.video_url);
-  const filmSlide = film
-    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
-    : '';
+  const reel = facebookReel(product.reel_url);
+  const film = reel ? '' : videoSrc(product.video_url);
+  const filmSlide = reel
+    ? reelPoster(product, photos[0], reel)
+    : film
+      ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+      : '';
   const slides = (filmSlide + (photos.length
     ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
     : '')) || `<span class="ph">${esc(letter(product.title))}</span>`;
-  const plan = slidePlan(Boolean(film), photos.length);
-  const labels = [...(film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
+  const plan = slidePlan(Boolean(reel || film), photos.length);
+  const labels = [...(reel || film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
   const nav = plan.controls
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
@@ -427,7 +430,7 @@ function productMain(code) {
   return `<main class="product-page">
     <p><a class="back" href="#/">← Sklep</a></p>
     <div class="gal-wrap">
-      <div class="gallery" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
+      <div class="gallery${reel ? ' reel-gallery' : ''}" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
       ${nav}
     </div>
     ${dots}
@@ -438,6 +441,32 @@ function productMain(code) {
     ${buy}
     <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
   </main>`;
+}
+
+function reelPoster(product, photo, reel) {
+  const poster = photo
+    ? thumbHtml(photo, product.title || 'Produkt', true, 800)
+    : `<span class="ph">${esc(letter(product.title))}</span>`;
+  return `<div class="reel-slide" data-embed="${esc(reel)}">
+    <button type="button" class="reel-poster" data-act="reel-play" aria-label="Odtwórz rolkę">
+      ${poster}
+      <span class="reel-play" aria-hidden="true">▶</span>
+    </button>
+  </div>`;
+}
+
+function mountFacebook(host, title) {
+  if (!host || host.querySelector('iframe')) return;
+  const autoplay = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const src = facebookPlayer(host.dataset.embed, autoplay);
+  if (!src) return;
+  const frame = document.createElement('iframe');
+  frame.src = src;
+  frame.title = title;
+  frame.setAttribute('allow', 'autoplay; fullscreen');
+  frame.setAttribute('allowfullscreen', '');
+  frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  host.replaceChildren(frame);
 }
 
 function colorChips(product) {
@@ -1340,6 +1369,10 @@ function onClick(event) {
     if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
     else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
     paint({ keep: true });
+    return;
+  }
+  if (act === 'reel-play') {
+    mountFacebook(target.closest('[data-embed]'), 'Rolka na Facebooku');
     return;
   }
   if (act === 'pay-close') {
