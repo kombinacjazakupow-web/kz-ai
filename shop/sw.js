@@ -56,6 +56,7 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.hostname === 'r2.selmo.io') return;
   if (url.hostname.endsWith('supabase.co') || url.hostname.includes('supabase')) return;
   if (url.origin !== self.location.origin) return;
   if (url.search && url.search !== `?v=${VERSION}`) return;

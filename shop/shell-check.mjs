@@ -35,6 +35,7 @@ assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable' && icon.size
 
 const worker = readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
 assert.match(worker, /supabase\.co/);
+assert.match(worker, /url\.hostname === 'r2\.selmo\.io'/);
 assert.match(worker, /const VERSION = '13'/);
 assert.match(worker, /kombi-sklep-shell-v\$\{VERSION\}/);
 assert.match(worker, /cache: 'reload'/);

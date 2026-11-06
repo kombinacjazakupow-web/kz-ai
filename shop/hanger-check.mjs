@@ -42,11 +42,14 @@ assert.match(shop, /hanger \? '' : facebookReel\(product\.reel_url\)/);
 assert.match(shop, /facebookReel\(product\.reel_url\)/);
 assert.doesNotMatch(shop, /pogl[aą]dowe/i);
 const hero = shop.slice(shop.indexOf('function heroHtml'), shop.indexOf('function railHtml'));
+const rail = shop.slice(shop.indexOf('function railHtml'), shop.indexOf('function dotHtml'));
 const grid = shop.slice(shop.indexOf('function gridHtml'), shop.indexOf('function productMain'));
 const reels = shop.slice(shop.indexOf('function reelsMain'), shop.indexOf('function choice'));
 assert.equal(hero.includes('hanger_video_url'), false);
+assert.equal(rail.includes('hanger_video_url'), false);
 assert.equal(grid.includes('hanger_video_url'), false);
 assert.equal(reels.includes('hanger_video_url'), false);
+assert.equal(readFileSync(new URL('./sw.js', import.meta.url), 'utf8').includes("hostname === 'r2.selmo.io'"), true);
 assert.equal(readFileSync(new URL('./rolki.js', import.meta.url), 'utf8').includes('hanger'), false);
 
 console.log('hanger-check ok');
