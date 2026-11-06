@@ -92,6 +92,14 @@ assert.match(css, /\.hanger-video \{[^}]*aspect-ratio: 9 \/ 16;[^}]*object-fit: 
 assert.match(css, /\.color-scroll \{[^}]*overflow-x: auto;/);
 assert.match(css, /\.buybar \{[^}]*env\(safe-area-inset-bottom\)/);
 assert.match(css, /body:has\(main\.hanger-page\) \.accountlink \{ display: none; \}/);
+assert.match(css, /min\(1100px, 100%\)/);
+assert.match(css, /height: 70vh;/);
+assert.match(css, /\.hanger-page \.buybar \{ display: none; \}/);
+assert.match(css, /\.hanger-colors \.color-scroll \{ flex-wrap: wrap;/);
+assert.match(shop, /desk-add/);
+assert.match(shop, /class="hanger-stage"/);
+assert.match(shop, /class="footlink" data-act="reload">Odśwież/);
+assert.match(css, /\.footer button\.footlink \{[^}]*appearance: none;/);
 assert.doesNotMatch(css, /hanger-pair:not\(\.solo\)/);
 assert.doesNotMatch(css, /hanger-photo img[^}]*object-fit: cover/);
 

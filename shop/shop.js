@@ -313,7 +313,7 @@ function footer() {
     <a href="regulamin.html">Regulamin</a>
     <a href="prywatnosc.html">Polityka prywatności</a>
     <a href="zwroty.html">Zwroty i reklamacje</a>
-    <button type="button" data-act="reload">Odśwież</button>
+    <button type="button" class="footlink" data-act="reload">Odśwież</button>
   </footer>`;
 }
 
@@ -467,15 +467,22 @@ function productMain(code) {
   const lead = `<h1>${esc(product.title || 'Produkt')}</h1>
     <p class="price">${esc(formatZl(product.price))}</p>
     ${badge && !sold ? `<p class="product-badge"><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}`;
-  const bar = `<div class="buybar">${colorBar(product)}<button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>`;
+  const addLabel = esc(buyLabel(formatZl(product.price), sold));
+  const addAttrs = sold || heldHere ? 'disabled' : '';
+  const bar = `<div class="buybar">${colorBar(product)}<button type="button" class="btn primary block" data-act="add" ${addAttrs}>${addLabel}</button></div>`;
   const rest = `${desc ? `<p class="desc">${esc(desc)}</p>` : ''}${buy}`;
   if (hanger) {
     return `<main class="product-page hanger-page">
       <p class="backline"><a class="back" href="#/">← Sklep</a></p>
-      ${hangerPair(product, hanger)}
-      ${lead}
-      ${liveSection(product)}
-      ${rest}
+      <div class="hanger-stage">${hangerPair(product, hanger)}</div>
+      <div class="hanger-side">
+        <div class="hanger-lead">${lead}</div>
+        <div class="hanger-colors">${colorBar(product)}</div>
+        <div class="hanger-buy">${buy}</div>
+        <button type="button" class="btn primary desk-add" data-act="add" ${addAttrs}>${addLabel}</button>
+        <div class="hanger-live">${liveSection(product)}</div>
+        ${desc ? `<p class="desc hanger-desc">${esc(desc)}</p>` : ''}
+      </div>
       ${bar}
     </main>`;
   }
