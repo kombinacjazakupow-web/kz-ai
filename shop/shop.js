@@ -76,7 +76,6 @@ const state = {
   metaView: '',
   metaCheckout: false,
   hangerMuted: true,
-  modelHold: '',
   hangerSeek: null,
 };
 
@@ -165,6 +164,12 @@ function photoList(product) {
 function letter(title) {
   const ch = String(title || '').trim().charAt(0).toLocaleUpperCase('pl');
   return ch || '·';
+}
+
+function modelShot(path) {
+  const src = photoSrc(path);
+  if (!src) return `<span class="ph" aria-hidden="true">${esc('M')}</span>`;
+  return `<img src="${esc(src)}" alt="Modelka AI" decoding="async" data-fallback="${esc(photoUrl(path))}" referrerpolicy="no-referrer">`;
 }
 
 function thumbHtml(path, alt, eager, width) {
@@ -474,10 +479,9 @@ function productMain(code) {
 }
 
 function hangerPair(product, src) {
-  const shot = modelPhoto(product, state.pick.color, state.variants, state.modelHold);
-  state.modelHold = shot.hold;
-  const left = shot.photo
-    ? `<div class="hanger-panel"><h2>Modelka AI</h2><div class="hanger-photo" id="model-photo">${thumbHtml(shot.photo, 'Modelka AI', true, 800)}</div></div>`
+  const photo = modelPhoto(product, state.pick.color, state.variants);
+  const left = photo
+    ? `<div class="hanger-panel"><h2>Modelka AI</h2><div class="hanger-photo" id="model-photo">${modelShot(photo)}</div></div>`
     : '';
   const quiet = state.hangerMuted !== false;
   return `<section class="hanger-pair${left ? '' : ' solo'}" aria-label="Modelka i film z wieszaka">
@@ -1394,7 +1398,6 @@ function syncPick(product) {
     .map((view) => view.name);
   if (state.pick.code !== String(product.code)) {
     state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
-    state.modelHold = '';
     state.hangerSeek = null;
   }
   state.pick.size = settleOption(sizes, state.pick.size);

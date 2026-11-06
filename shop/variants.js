@@ -30,17 +30,13 @@ function safePhoto(value) {
   return raw;
 }
 
-export function modelPhoto(product, color, variants, hold = '') {
+export function modelPhoto(product, color, variants) {
   const mine = (Array.isArray(variants) ? variants : []).filter((row) => row.product_id === product?.id && row.ai_photo);
-  if (!mine.length) return { photo: '', hold: '' };
+  if (!mine.length) return '';
   const want = String(color || '').trim().toLocaleLowerCase('pl');
-  if (want) {
-    const hit = mine.find((row) => row.color.toLocaleLowerCase('pl') === want);
-    if (hit) return { photo: hit.ai_photo, hold: hit.ai_photo };
-    const kept = safePhoto(hold);
-    return { photo: kept, hold: kept };
-  }
-  return { photo: mine[0].ai_photo, hold: mine[0].ai_photo };
+  if (!want) return mine[0].ai_photo;
+  const hit = mine.find((row) => row.color.toLocaleLowerCase('pl') === want);
+  return hit ? hit.ai_photo : '';
 }
 
 export function colorMoment(product, color, variants) {
