@@ -35,14 +35,14 @@ assert.ok(manifest.icons.some((icon) => icon.purpose === 'maskable' && icon.size
 
 const worker = readFileSync(new URL('./sw.js', import.meta.url), 'utf8');
 assert.match(worker, /supabase\.co/);
-assert.match(worker, /const VERSION = '12'/);
+assert.match(worker, /const VERSION = '13'/);
 assert.match(worker, /kombi-sklep-shell-v\$\{VERSION\}/);
 assert.match(worker, /cache: 'reload'/);
 assert.match(worker, /\?v=\$\{VERSION\}/);
 const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-assert.match(page, /shop\.js\?v=12/);
-assert.match(page, /#common": "\.\/common\.js\?v=12"/);
-assert.match(readFileSync(new URL('./shop.js', import.meta.url), 'utf8'), /sw\.js\?v=12/);
+assert.match(page, /shop\.js\?v=13/);
+assert.match(page, /#common": "\.\/common\.js\?v=13"/);
+assert.match(readFileSync(new URL('./shop.js', import.meta.url), 'utf8'), /sw\.js\?v=13/);
 assert.match(worker, /startsWith\('kombi-sklep-shell-'\)/);
 assert.doesNotMatch(worker, /kombi-shell-v/);
 

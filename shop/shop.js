@@ -1798,7 +1798,7 @@ if (typeof window !== 'undefined') {
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=12', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=13', { scope: './' }).catch(() => {});
     });
   }
 }
