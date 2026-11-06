@@ -600,10 +600,10 @@ function soonHtml() {
     return `<article class="soon-card">
       <h3>${esc(item.title)}</h3>
       <p>${esc(item.text)}</p>
-      <button type="button" class="btn" data-act="interest" data-id="${esc(item.id)}" aria-pressed="${on ? 'true' : 'false'}">${on ? 'Zapisane na tym telefonie' : 'Daj mi znać'}</button>
+      <button type="button" class="btn" data-act="interest" data-id="${esc(item.id)}" aria-pressed="${on ? 'true' : 'false'}">${on ? 'Zapisane tylko na tym telefonie' : 'Zapisz na tym telefonie'}</button>
     </article>`;
   }).join('');
-  return `<section class="soon"><h2>Wkrótce</h2>${cards}</section>`;
+  return `<section class="soon"><h2>Wkrótce</h2><p class="hint">Nie wysyłamy tego nikomu. Zapis zostaje tylko na tym telefonie.</p>${cards}</section>`;
 }
 
 function installCard() {
