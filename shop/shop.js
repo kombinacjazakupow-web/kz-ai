@@ -5,7 +5,7 @@ import {
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
-  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE,
+  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
 import {
@@ -162,6 +162,14 @@ function thumbHtml(path, alt, eager, width) {
   return `<span class="blurup"${tiny ? ` style="background-image:url('${esc(tiny)}')"` : ''}>
     <img src="${esc(full)}" alt="${esc(alt)}" loading="${loading}" decoding="async"${priority} data-fallback="${esc(photoUrl(path))}" referrerpolicy="no-referrer">
   </span>`;
+}
+
+function colourGone(line) {
+  const product = productById(line?.product_id);
+  if (!product || !line?.color) return false;
+  const views = colorViews(product, state.variants);
+  if (!views.length || views.some((view) => view.stock == null)) return false;
+  return !views.some((view) => view.name === String(line.color) && view.stock > 0);
 }
 
 function pricedLines() {
@@ -459,9 +467,11 @@ function basketMain() {
     return `<main class="center"><h1>Koszyk</h1><p>Koszyk jest pusty.</p><p><a class="btn primary" href="#/">Zobacz produkty</a></p></main>`;
   }
   const lines = pricedLines();
-  const totals = previewTotals(lines);
+  const open = lines.filter((line) => !colourGone(line));
+  const totals = previewTotals(open);
   const rows = lines.map((line) => {
     const meta = [line.size, line.color].filter(Boolean).join(' · ');
+    const gone = colourGone(line);
     const product = productById(line.product_id);
     const stock = product ? stockOf(product, line.color) : null;
     const cap = stock == null ? 99 : Math.max(0, stock);
@@ -470,13 +480,13 @@ function basketMain() {
       <div>
         <h2>${esc(line.title)}</h2>
         ${meta ? `<p class="muted">${esc(meta)}</p>` : ''}
-        <p class="price">${esc(formatZl(line.price))} · ${esc(formatZl(line.price * line.qty))}</p>
+        ${gone ? '<p class="badge sold" style="position:static">Ten kolor jest wyprzedany</p>' : `<p class="price">${esc(formatZl(line.price))} · ${esc(formatZl(line.price * line.qty))}</p>`}
         <div class="line-actions">
-          <div class="stepper">
+          ${gone ? '' : `<div class="stepper">
             <button type="button" data-act="lqty" data-key="${esc(lineKey(line))}" data-dir="-1" aria-label="Mniej">−</button>
             <span>${esc(String(line.qty))}</span>
             <button type="button" data-act="lqty" data-key="${esc(lineKey(line))}" data-dir="1" aria-label="Więcej" ${line.qty >= cap ? 'disabled' : ''}>+</button>
-          </div>
+          </div>`}
           <button type="button" class="btn ghost" data-act="drop" data-key="${esc(lineKey(line))}">Usuń</button>
         </div>
       </div>
@@ -503,11 +513,13 @@ function checkoutMain() {
   const draft = state.draft;
   const err = state.fieldErrors;
   const lines = pricedLines();
-  const totals = previewTotals(lines);
+  const totals = previewTotals(lines.filter((line) => !colourGone(line)));
   const summary = lines.map((line) => {
     const meta = [line.size, line.color].filter(Boolean).join(' · ');
-    const problem = state.problemCode && line.code === state.problemCode;
-    return `<p class="${problem ? 'problem' : ''}">${esc(line.title)}${meta ? ` · ${esc(meta)}` : ''} × ${esc(String(line.qty))} — ${esc(formatZl((Number(line.price) || 0) * line.qty))}${problem ? ` — ${esc('Ten produkt właśnie się wyprzedał.')}` : ''}</p>`;
+    const gone = colourGone(line);
+    const problem = gone || (state.problemCode && line.code === state.problemCode);
+    const note = gone ? ' — Ten kolor jest wyprzedany' : (problem ? ' — Ten produkt właśnie się wyprzedał.' : '');
+    return `<p class="${problem ? 'problem' : ''}">${esc(line.title)}${meta ? ` · ${esc(meta)}` : ''} × ${esc(String(line.qty))} — ${esc(formatZl((Number(line.price) || 0) * line.qty))}${esc(note)}</p>`;
   }).join('');
   const alert = state.formError || err.items || '';
   return `<main>
@@ -1054,8 +1066,8 @@ async function placeOrder(form) {
   if (form.elements.postcode) form.elements.postcode.value = input.postcode;
   saveDraft({ ...input, terms: input.terms });
   const lines = pricedLines();
-  const checked = validateCheckout(input, lines);
-  const stockMsg = state.loaded ? stockProblem(lines, state.products) : '';
+  const checked = validateCheckout(input, lines.filter((line) => !colourGone(line)));
+  const stockMsg = state.loaded ? stockProblem(lines, state.products, state.variants) : '';
   if (!checked.ok || stockMsg) {
     if (['name', 'phone', 'email', 'street', 'postcode', 'city'].some((key) => checked.errors[key])) {
       state.editBuyer = true;
@@ -1088,7 +1100,7 @@ async function placeOrder(form) {
     } else {
       const body = coerceOrder(data);
       if (body?.error) {
-        failed = variantError(body.error) || mapOrderError(body.error);
+        failed = refusedLine(body.error, lines) || variantError(body.error) || mapOrderError(body.error);
         state.problemCode = '';
         const raw = String(body.error);
         if (raw.startsWith('color:') || raw.startsWith('out_of_stock:')) loadVariants();

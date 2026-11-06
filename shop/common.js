@@ -454,20 +454,59 @@ export function thanksLines(order) {
   return lines;
 }
 
-export function stockProblem(lines, products) {
+function lineLabel(line) {
+  return [line?.title, line?.color, line?.size].filter(Boolean).join(' · ');
+}
+
+export function refusedLine(code, lines) {
+  const raw = String(code || '').trim();
+  const at = raw.indexOf(':');
+  if (at < 1) return '';
+  const key = raw.slice(0, at);
+  if (key !== 'color' && key !== 'out_of_stock') return '';
+  const productCode = raw.slice(at + 1).trim();
+  const names = (lines || [])
+    .filter((line) => String(line?.code || '') === productCode)
+    .map(lineLabel)
+    .filter(Boolean);
+  if (!names.length) return '';
+  const name = names.join(', ');
+  if (key === 'color') return `${name}: ten kolor właśnie się skończył – wybierz inny`;
+  return `${name}: ten kolor jest już wyprzedany`;
+}
+
+export function stockProblem(lines, products, variants) {
   if (!products) return '';
+  const rows = Array.isArray(variants) ? variants : [];
   const totals = new Map();
   for (const line of lines || []) {
     const product = products.find((item) => item.id === line.product_id);
-    if (!product || product.active === false) return 'W koszyku jest produkt, który jest już niedostępny.';
+    if (!product || product.active === false) {
+      const name = lineLabel(line);
+      return name ? `${name} jest już niedostępny.` : 'W koszyku jest produkt, który jest już niedostępny.';
+    }
+    const mine = rows.filter((row) => row.product_id === line.product_id);
+    if (mine.length && line.color) {
+      const key = String(line.color).toLocaleLowerCase('pl');
+      const hit = mine.find((row) => String(row.color || '').toLocaleLowerCase('pl') === key);
+      const qty = Number(line.qty) || 0;
+      if (!hit || hit.stock < qty) return `${lineLabel(line) || 'Ta pozycja'}: ten kolor właśnie się skończył.`;
+    }
     const id = String(line.product_id);
     totals.set(id, (totals.get(id) || 0) + (Number(line.qty) || 0));
   }
   for (const [id, qty] of totals) {
     const product = products.find((item) => item.id === id);
     const stock = Number(product?.stock);
-    if (Number.isFinite(stock) && stock <= 0) return 'Ten produkt właśnie się wyprzedał.';
-    if (Number.isFinite(stock) && qty > stock) return 'Za duża ilość względem stanu. Zmniejsz liczbę sztuk.';
+    const name = (lines || []).filter((line) => String(line.product_id) === id).map(lineLabel).filter(Boolean).join(', ');
+    if (Number.isFinite(stock) && stock <= 0) {
+      return name ? `${name}: ten produkt właśnie się wyprzedał.` : 'Ten produkt właśnie się wyprzedał.';
+    }
+    if (Number.isFinite(stock) && qty > stock) {
+      return name
+        ? `${name}: za duża ilość względem stanu. Zmniejsz liczbę sztuk.`
+        : 'Za duża ilość względem stanu. Zmniejsz liczbę sztuk.';
+    }
   }
   return '';
 }

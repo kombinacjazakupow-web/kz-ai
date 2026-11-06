@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {
-  upsertLine, setLineQty, stockProblem, clampBasket, lineKey,
+  upsertLine, setLineQty, stockProblem, clampBasket, lineKey, refusedLine,
   BLIK_LINE, BLIK_COPY, TRANSFER_LINE, TRANSFER_COPY, thanksLines,
 } from './common.js';
 
@@ -31,6 +31,18 @@ const clamped = clampBasket([
   { product_id: id, qty: 3, size: 'M', color: '' },
 ], [{ id, active: true, stock: 4, price: 10 }]);
 assert.equal(clamped.reduce((sum, line) => sum + line.qty, 0), 4);
+
+const goneColour = stockProblem(
+  [{ product_id: id, code: 'K-001', title: 'Kurtka', color: 'ecru', size: 'M', qty: 1 }],
+  [{ id, active: true, stock: 4, title: 'Kurtka' }],
+  [{ product_id: id, color: 'ecru', stock: 0 }],
+);
+assert.match(goneColour, /Kurtka · ecru · M/);
+assert.match(goneColour, /kolor/);
+const named = refusedLine('out_of_stock:K-001', [{ code: 'K-001', title: 'Kurtka', color: 'ecru', size: 'M' }]);
+assert.match(named, /Kurtka · ecru · M/);
+assert.equal(named.includes('K-001'), false);
+assert.equal(refusedLine('out_of_stock:K-001', []), '');
 
 assert.equal(BLIK_COPY, '796 669 157');
 assert.equal(TRANSFER_COPY, 'PL24 2910 0006 0000 0000 0571 2568');
