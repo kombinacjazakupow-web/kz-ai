@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { hangerSrc } from './common.js';
-import { cleanVariants, modelPhoto } from './variants.js';
+import { cleanVariants, colorMoment, modelPhoto } from './variants.js';
 
 const film = 'https://r2.selmo.io/hanger/test.mp4';
 assert.equal(hangerSrc(film), film);
@@ -25,8 +25,14 @@ assert.equal(rows[1].ai_photo, '');
 assert.deepEqual(modelPhoto(product, '', rows), { photo: 'products/K/czarny.jpg', hold: 'products/K/czarny.jpg' });
 assert.deepEqual(modelPhoto(product, 'czarny', rows, ''), { photo: 'products/K/czarny.jpg', hold: 'products/K/czarny.jpg' });
 assert.deepEqual(modelPhoto({ id: 'other' }, '', rows), { photo: '', hold: '' });
+assert.deepEqual(modelPhoto(product, 'ecru', rows, 'products/K/czarny.jpg'), { photo: 'products/K/czarny.jpg', hold: 'products/K/czarny.jpg' });
+assert.equal(colorMoment(product, 'czarny', rows), 12.5);
+assert.equal(colorMoment(product, 'ecru', rows), null);
+assert.equal(colorMoment(product, '', rows), null);
 
 const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
+assert.match(shop, /video\.addEventListener\('loadedmetadata'/);
+assert.match(shop, /colorMoment\(product, chosen, state\.variants\)/);
 assert.match(shop, /Modelka AI/);
 assert.match(shop, /Film z wieszaka/);
 assert.match(shop, /preload="metadata"/);

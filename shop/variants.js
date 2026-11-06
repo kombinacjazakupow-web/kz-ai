@@ -46,7 +46,8 @@ export function colorMoment(product, color, variants) {
   const want = String(color || '').trim().toLocaleLowerCase('pl');
   if (!want) return null;
   const hit = (Array.isArray(variants) ? variants : []).find((row) => row.product_id === product?.id && row.color.toLocaleLowerCase('pl') === want);
-  const seconds = Number(hit?.video_seconds);
+  if (hit?.video_seconds == null || hit.video_seconds === '') return null;
+  const seconds = Number(hit.video_seconds);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 

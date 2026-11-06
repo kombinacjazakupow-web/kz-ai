@@ -10,7 +10,7 @@ import {
   META_PIXEL_ID, META_CHOICE_KEY, metaOn, metaPayload, metaPurchase,
 } from '#common';
 import {
-  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, liveStockText, modelPhoto, orderCatalog, roomForColor, stockForColor, variantError,
+  cleanVariants, colorBasket, colorMoment, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, liveStockText, modelPhoto, orderCatalog, roomForColor, stockForColor, variantError,
 } from '#variants';
 import { dropRail, dotPaint, newestDrop, visibleDots } from '#window';
 import { buyLabel } from '#buy';
@@ -77,6 +77,7 @@ const state = {
   metaCheckout: false,
   hangerMuted: true,
   modelHold: '',
+  hangerAt: null,
 };
 
 let accountGen = 0;
@@ -1130,6 +1131,7 @@ function watchHanger() {
   const video = document.querySelector('.hanger-video');
   if (!video) return;
   video.muted = state.hangerMuted !== false;
+  seekHanger(video);
   const play = () => video.play().catch(() => {});
   if (typeof IntersectionObserver !== 'function') {
     play();
@@ -1142,6 +1144,21 @@ function watchHanger() {
     }
   }, { threshold: [0, 0.6, 1] });
   observer.observe(video);
+}
+
+function seekHanger(video) {
+  const route = parseRoute(location.hash);
+  const product = route.name === 'product' ? findProduct(route.code) : null;
+  if (!product) return;
+  const seconds = colorMoment(product, state.pick.color, state.variants);
+  const at = seconds == null ? state.hangerAt : seconds;
+  if (at == null || !Number.isFinite(Number(at))) return;
+  const apply = () => {
+    try { video.currentTime = Number(at); } catch { /* the film is not ready yet */ }
+    video.play().catch(() => {});
+  };
+  if (video.readyState >= 1) apply();
+  else video.addEventListener('loadedmetadata', apply, { once: true });
 }
 
 function watchReels() {
@@ -1293,6 +1310,7 @@ function syncPick(product) {
   if (state.pick.code !== String(product.code)) {
     state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
     state.modelHold = '';
+    state.hangerAt = null;
   }
   state.pick.size = settleOption(sizes, state.pick.size);
   state.pick.color = settleOption(available, state.pick.color);
@@ -1418,6 +1436,11 @@ function onClick(event) {
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
     else {
+      const video = document.querySelector('.hanger-video');
+      const seconds = colorMoment(product, chosen, state.variants);
+      if (seconds == null) {
+        if (video && Number.isFinite(video.currentTime)) state.hangerAt = video.currentTime;
+      } else state.hangerAt = seconds;
       state.pick.color = chosen;
       paint({ keep: true });
       return;
