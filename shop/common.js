@@ -11,7 +11,7 @@ export const TRANSFER_LINE = 'Przelew: PL24 2910 0006 0000 0000 0571 2568 (Serge
 export const BLIK_COPY = '796 669 157';
 export const TRANSFER_COPY = 'PL24 2910 0006 0000 0000 0571 2568';
 export const FACEBOOK_LOGIN = false;
-export const META_PIXEL_ID = '';
+export const META_PIXEL_ID = '2239797080173159';
 export const META_CHOICE_KEY = 'kombi-shop-meta';
 
 export const BASKET_KEY = 'kombi-shop-basket';
