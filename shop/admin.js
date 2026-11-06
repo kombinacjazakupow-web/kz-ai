@@ -1,6 +1,6 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import {
-  SUPABASE_URL, SUPABASE_KEY, esc, formatZl, formatWhen, photoUrl, normalizeList,
+  SUPABASE_URL, SUPABASE_KEY, esc, formatZl, formatWhen, photoUrl, normalizeList, facebookReel, facebookClip,
   nextProductCode, ownerFlag, parseAdminRoute, sortProducts, ORDER_STATUS, STATUS_NEXT, STATUS_ACTION,
 } from '#common';
 
@@ -77,6 +77,8 @@ function captureProductForm() {
     stock: form.stock?.value ?? '',
     sort: form.sort?.value ?? '',
     video_url: form.video_url?.value ?? '',
+    reel_url: form.reel_url?.value ?? '',
+    live_clip_url: form.live_clip_url?.value ?? '',
     active: !!form.elements.namedItem('active')?.checked,
   };
 }
@@ -212,7 +214,7 @@ function editMain(id) {
   }
   const suggested = nextProductCode(state.products.map((item) => item.code));
   const blank = {
-    code: suggested, title: '', description: '', price: '', sizes: '', colors: '', stock: 1, sort: 0, video_url: '', active: true,
+    code: suggested, title: '', description: '', price: '', sizes: '', colors: '', stock: 1, sort: 0, video_url: '', reel_url: '', live_clip_url: '', active: true,
   };
   const saved = product ? {
     code: product.code || '',
@@ -224,6 +226,8 @@ function editMain(id) {
     stock: product.stock ?? 0,
     sort: product.sort ?? 0,
     video_url: product.video_url || '',
+    reel_url: product.reel_url || '',
+    live_clip_url: product.live_clip_url || '',
     active: product.active !== false,
   } : blank;
   const value = state.formDraft || saved;
@@ -253,6 +257,8 @@ function editMain(id) {
       ${input('sort', 'Kolejność', value.sort ?? 0, err.sort, 'inputmode="numeric" step="1"', 'number')}
       <label class="check"><input id="active" name="active" type="checkbox"${value.active !== false ? ' checked' : ''}><span>Aktywny w sklepie</span></label>
       ${input('video_url', 'Film', value.video_url || '', err.video_url, 'placeholder="https://… albo poślemy plik niżej" spellcheck="false"')}
+      ${input('reel_url', 'Rolka Facebook', value.reel_url || '', err.reel_url, 'placeholder="https://www.facebook.com/reel/123" spellcheck="false" inputmode="url"')}
+      ${input('live_clip_url', 'Fragment z live', value.live_clip_url || '', err.live_clip_url, 'placeholder="https://www.facebook.com/…" spellcheck="false" inputmode="url"')}
       <label class="file">Film MP4 lub MOV
         <input id="video" name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov">
       </label>
@@ -620,6 +626,8 @@ function validateProduct(value, editingId) {
   if (price == null) errors.price = 'Podaj cenę, na przykład 79.00.';
   if (!/^\d+$/.test(value.stock.trim())) errors.stock = 'Stan magazynu: liczba sztuk, 0 albo więcej.';
   if (value.sort.trim() && !/^\d+$/.test(value.sort.trim())) errors.sort = 'Kolejność: liczba, na przykład 10.';
+  if (String(value.reel_url || '').trim() && !facebookReel(value.reel_url)) errors.reel_url = 'Adres rolki zaczyna się od https://www.facebook.com/reel/ i ma sam numer.';
+  if (String(value.live_clip_url || '').trim() && !facebookClip(value.live_clip_url)) errors.live_clip_url = 'Fragment z live musi być filmem na www.facebook.com.';
   return {
     ok: Object.keys(errors).length === 0,
     errors,
@@ -731,6 +739,8 @@ async function saveProduct(form) {
     stock: form.stock.value,
     sort: form.sort.value,
     video_url: form.video_url?.value || '',
+    reel_url: form.reel_url?.value || '',
+    live_clip_url: form.live_clip_url?.value || '',
   };
   const active = !!form.elements.namedItem('active')?.checked;
   state.formDraft = {
@@ -776,6 +786,8 @@ async function saveProduct(form) {
       active,
       photos,
       video_url: String(state.formDraft?.video_url || '').trim(),
+      reel_url: facebookReel(value.reel_url) || null,
+      live_clip_url: facebookClip(value.live_clip_url) || null,
     };
     const write = editingId
       ? sb.from('shop_products').update(payload).eq('id', editingId).select('id')
