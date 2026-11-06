@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { momentText } from './variants.js';
 
 assert.equal(momentText(12.4), '0:12,4');
+assert.equal(momentText(1.2), '0:01,2');
 assert.equal(momentText(0), '0:00,0');
 assert.equal(momentText(null), '');
 assert.equal(momentText(-1), '');

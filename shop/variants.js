@@ -55,8 +55,9 @@ export function momentText(seconds) {
   if (seconds == null || seconds === '') return '';
   const n = Number(seconds);
   if (!Number.isFinite(n) || n < 0) return '';
-  const whole = Math.floor(n);
-  const tenth = Math.min(9, Math.floor((n - whole) * 10));
+  let whole = Math.floor(n);
+  let tenth = Math.round((n - whole) * 10);
+  if (tenth === 10) { tenth = 0; whole += 1; }
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')},${tenth}`;
 }
 
