@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { SLOGANS, BLIK_COPY, photoSrc, photoUrl, slidePlan } from './common.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 
@@ -18,4 +19,8 @@ assert.equal(photoSrc('products/a.jpg', 800).includes('/render/image/'), false);
 assert.deepEqual(slidePlan(true, 1), { total: 2, controls: true });
 assert.deepEqual(slidePlan(false, 1), { total: 1, controls: false });
 assert.deepEqual(slidePlan(true, 0), { total: 1, controls: false });
+const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
+assert.match(shop, /Nowość dnia/);
+assert.doesNotMatch(shop, /Drop dnia/);
+assert.doesNotMatch(shop, /href="admin.html"/);
 console.log('window-check ok');

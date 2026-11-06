@@ -290,7 +290,6 @@ function footer() {
     <a href="prywatnosc.html">Polityka prywatności</a>
     <a href="zwroty.html">Zwroty i reklamacje</a>
     <button type="button" data-act="reload">Odśwież</button>
-    <a href="admin.html">Panel</a>
   </footer>`;
 }
 
@@ -350,7 +349,7 @@ function railHtml() {
       <span class="price">${esc(formatZl(product.price))}</span>
     </a>`;
   }).join('');
-  return `<section class="rail" aria-label="Drop dnia"><h2>Drop dnia</h2><div class="rail-row">${cards}</div></section>`;
+  return `<section class="rail" aria-label="Nowość dnia"><h2>Nowość dnia</h2><div class="rail-row">${cards}</div></section>`;
 }
 
 function dotHtml(product) {
