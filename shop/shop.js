@@ -5,7 +5,7 @@ import {
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
-  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
+  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
 } from './common.js';
 import {
@@ -67,6 +67,7 @@ const state = {
   promoOpen: false,
   promoDismissed: false,
   losLine: { home: '', thanks: '' },
+  checkoutKey: '',
 };
 
 let accountGen = 0;
@@ -1061,13 +1062,14 @@ async function placeOrder(form) {
     button.disabled = true;
     button.textContent = 'Wysyłam zamówienie…';
   }
-  const payload = buildOrderPayload(input, lines);
+  state.checkoutKey = orderAttemptKey(state.checkoutKey);
+  const payload = buildOrderPayload(input, lines, state.checkoutKey);
   let failed = '';
   try {
     const { data, error } = await sb.rpc('shop_place_order', { p: payload });
     if (error) {
       failed = /failed to fetch|network|load failed/i.test(`${error.message || ''}`)
-        ? 'Brak sieci. Sprawdź połączenie i spróbuj jeszcze raz.'
+        ? ORDER_UNSURE
         : 'Nie udało się złożyć zamówienia. Spróbuj jeszcze raz.';
     } else {
       const body = coerceOrder(data);
@@ -1077,8 +1079,9 @@ async function placeOrder(form) {
         const raw = String(body.error);
         if (raw.startsWith('color:') || raw.startsWith('out_of_stock:')) loadVariants();
       } else if (!body?.order_no) {
-        failed = 'Nie udało się złożyć zamówienia. Spróbuj jeszcze raz.';
+        failed = ORDER_UNSURE;
       } else {
+        state.checkoutKey = '';
         saveThanks({
           order_no: body.order_no,
           products_total: body.products_total,
@@ -1093,7 +1096,7 @@ async function placeOrder(form) {
       }
     }
   } catch {
-    failed = 'Brak sieci. Sprawdź połączenie i spróbuj jeszcze raz.';
+    failed = ORDER_UNSURE;
   }
   state.busy = false;
   state.formError = failed;

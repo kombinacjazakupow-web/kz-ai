@@ -379,7 +379,17 @@ export function validateCheckout(form, lines) {
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
-export function buildOrderPayload(form, lines) {
+export const ORDER_UNSURE = 'Nie mamy pewności, czy zamówienie doszło. Sprawdź Moje zamówienia, zanim wyślesz je jeszcze raz.';
+
+const ATTEMPT_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function orderAttemptKey(current, makeId = () => crypto.randomUUID()) {
+  const key = String(current || '');
+  if (ATTEMPT_KEY.test(key)) return key;
+  return makeId();
+}
+
+export function buildOrderPayload(form, lines, clientKey) {
   const payload = {
     name: String(form.name || '').trim(),
     phone: normalizePhone(form.phone),
@@ -398,6 +408,8 @@ export function buildOrderPayload(form, lines) {
     })),
   };
   if (form.delivery === 'dpd_point') payload.point_code = String(form.point_code || '').trim();
+  const attempt = String(clientKey || '');
+  if (ATTEMPT_KEY.test(attempt)) payload.client_key = attempt;
   return payload;
 }
 

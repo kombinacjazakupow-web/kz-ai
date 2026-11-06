@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   SLOGANS, LAUNCH_BANNER, PAY_WINDOW, PROOF_OK, LUCKY_LABEL,
   pickSlogan, proofObjectPath, proofKind, mapProofResult, parseRoute, videoSrc, rememberOrder,
+  orderAttemptKey, buildOrderPayload, ORDER_UNSURE,
 } from './common.js';
 
 const expected = [
@@ -43,5 +44,16 @@ assert.equal(kept[0].phone, '796669157');
 const newer = rememberOrder(kept, { order_no: 'KS1030', phone: '500600700' });
 const replayed = newer.slice().reverse().reduce((list, row) => rememberOrder(list, row), []);
 assert.deepEqual(replayed.map((row) => row.order_no), ['KS1030', 'KS1029']);
+
+const attempt = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+assert.equal(orderAttemptKey(attempt, () => 'fresh'), attempt);
+assert.notEqual(orderAttemptKey('', () => 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), attempt);
+const form = { name: 'Anna Test', phone: '500 600 700', email: '', street: 'Testowa 1', postcode: '00-001', city: 'Warszawa', delivery: 'dpd_home', payment: 'blik', note: '' };
+const once = buildOrderPayload(form, [{ product_id: id, qty: 1, size: '', color: '' }], attempt);
+const twice = buildOrderPayload(form, [{ product_id: id, qty: 1, size: '', color: '' }], attempt);
+assert.equal(once.client_key, attempt);
+assert.equal(twice.client_key, once.client_key);
+assert.match(ORDER_UNSURE, /Moje zamówienia/);
+assert.match(ORDER_UNSURE, /zanim wyślesz/);
 
 console.log('launch-check ok');
