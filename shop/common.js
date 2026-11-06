@@ -18,7 +18,6 @@ export const BASKET_KEY = 'kombi-shop-basket';
 export const DRAFT_KEY = 'kombi-shop-draft';
 export const THANKS_KEY = 'kombi-shop-thanks';
 export const ORDERS_KEY = 'kombi-shop-orders';
-export const LAUNCH_BANNER = '04.11.2026 \u2013 startujemy z nasz\u0105 pierwsz\u0105 aplikacj\u0105! \u{1F389} Ceny startowe dla pierwszych zam\u00f3wie\u0144 w aplikacji.';
 export const PAY_WINDOW = 'Zap\u0142a\u0107 w ci\u0105gu 1 godziny i do\u0142\u0105cz potwierdzenie';
 export const PROOF_LABEL = 'Do\u0142\u0105cz potwierdzenie p\u0142atno\u015bci';
 export const PROOF_OK = 'Potwierdzenie wys\u0142ane \u2705 \u2013 sprawdzimy i potwierdzimy';

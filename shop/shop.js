@@ -2,7 +2,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
-  LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
+  PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, hangerSrc, sameHangerFilm, playbackHeld, photosAfterPoster, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket, FACEBOOK_LOGIN,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
@@ -287,7 +287,7 @@ function shell() {
   const body = mainView();
   const reels = parseRoute(location.hash).name === 'reels';
   if (reels) return `${body}<div id="toast" class="toast" role="status" hidden></div>`;
-  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>${cookieBar()}`;
+  return `${topbar()}${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>${cookieBar()}`;
 }
 
 function topbar() {
