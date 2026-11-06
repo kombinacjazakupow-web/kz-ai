@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  accountEmptyText, claimMessage, clientStatus, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct,
+  accountEmptyText, claimMessage, clientStatus, emailOk, ignoreSameSignIn, liveAmount, mergeAccountOrders, orderSourceLabel, promoProduct,
   shouldShowPromo, trackUrl, OTHER_BROWSER_NOTE, PROMO_CODE, SERVICE_LINE,
 } from './account.js';
 import { BLIK_COPY, TRANSFER_COPY, SLOGANS, parseRoute } from './common.js';
@@ -69,6 +69,8 @@ const orders = mergeAccountOrders(
 );
 assert.deepEqual(orders.map((order) => order.order_no), ['9001', 'KS1001']);
 assert.equal(orders[0].source, 'live');
+assert.equal(orders[0].amount, 105);
+assert.equal(liveAmount({ products_total: 80, delivery_fee: 0 }), 80);
 assert.equal(orders[1].source, 'shop');
 assert.equal(orders[0].status, 'Doręczona');
 assert.equal(orders[0].lines[0], 'Paczka testowa × 2');
@@ -108,6 +110,7 @@ assert.match(shop, /getSession\(\)/);
 assert.match(shop, /Moje konto/);
 assert.match(shop, /Śledź paczkę/);
 assert.match(shop, /orderSourceLabel/);
+assert.match(shop, /accountFailed \? ''/);
 assert.doesNotMatch(shop, /shop_place_order[\s\S]{0,80}price/);
 
 assert.equal(BLIK_COPY, '796 669 157');

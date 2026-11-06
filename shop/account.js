@@ -1,4 +1,5 @@
 // Client account helpers. No network calls here, so the status rules can be tested alone.
+import { DELIVERY_FEE } from './common.js';
 
 export const PROMO_CODE = 'PACZKA-5';
 export const PROMO_SEEN_KEY = 'kombi-shop-promo-paczka-5';
@@ -111,6 +112,14 @@ export function shopAmount(order) {
   return sum;
 }
 
+export function liveAmount(order) {
+  const products = Number(order?.products_total);
+  const goods = Number.isFinite(products) ? products : 0;
+  const stated = Number(order?.delivery_fee);
+  const delivery = Number.isFinite(stated) ? stated : DELIVERY_FEE;
+  return Math.round((goods + delivery) * 100) / 100;
+}
+
 function lineQty(item) {
   const qty = Number(item?.qty ?? item?.quantity);
   return Number.isFinite(qty) && qty > 0 ? qty : 0;
@@ -152,7 +161,7 @@ export function mergeAccountOrders(shopOrders, shopItems, extOrders) {
   const ext = (Array.isArray(extOrders) ? extOrders : []).map((order) => ({
     order_no: String(order?.order_no || ''),
     created_at: String(order?.created_at || ''),
-    amount: Number(order?.products_total) || 0,
+    amount: liveAmount(order),
     source: 'live',
     status: clientStatus(order?.status, order?.dpd_state),
     track: trackUrl(order?.dpd_waybill),

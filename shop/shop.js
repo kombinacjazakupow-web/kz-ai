@@ -61,6 +61,7 @@ const state = {
   accountLinks: [],
   accountOrders: [],
   accountNote: '',
+  accountFailed: false,
   accountDraft: { email: '', phone: '', orderNo: '' },
   accountBusy: false,
   magicSent: false,
@@ -790,7 +791,7 @@ function accountOrdersView() {
     <p><button type="button" class="btn ghost" data-act="logout">Wyloguj</button></p>
     ${accountNoteHtml()}
     ${claim}
-    ${state.accountLinks.length ? accountOrderCards() : `<p>${esc(accountEmptyText(0))}</p>`}
+    ${state.accountFailed ? '' : (state.accountLinks.length ? accountOrderCards() : `<p>${esc(accountEmptyText(0))}</p>`)}
     <p class="service">${esc(SERVICE_LINE)}</p>
   </main>`;
 }
@@ -823,6 +824,7 @@ function clearAccount() {
   state.accountLinks = [];
   state.accountOrders = [];
   state.accountBusy = false;
+  state.accountFailed = false;
 }
 
 async function loadAccount() {
@@ -839,6 +841,7 @@ async function loadAccount() {
       state.accountOrders = [];
       state.accountLoaded = true;
       state.accountLoading = false;
+      state.accountFailed = false;
       paint({ keep: true });
       return;
     }
@@ -859,11 +862,13 @@ async function loadAccount() {
     }
     state.accountOrders = mergeAccountOrders(shopRes.data || [], shopItems, extRes.data || []);
     state.accountLoaded = true;
+    state.accountFailed = false;
     state.accountNote = state.accountNote && state.accountNote.startsWith('Numer dopisany') ? state.accountNote : '';
   } catch {
     if (gen !== accountGen) return;
     state.accountOrders = [];
     state.accountLoaded = true;
+    state.accountFailed = true;
     state.accountNote = 'Nie udało się pobrać zamówień.';
   }
   state.accountLoading = false;
