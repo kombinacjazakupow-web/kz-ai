@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buyerLine, hasSavedBuyer, savedBuyerOk, storedBuyer } from './checkout.js';
-import { BLIK_COPY, COD_NOTE, SLOGANS } from './common.js';
+import { BLIK_COPY, SLOGANS, mapOrderError, thanksLines, validateCheckout } from './common.js';
 
 const full = { name: 'Anna Test', phone: '500600700', street: 'Testowa 1', postcode: '00-001', city: 'Warszawa' };
 assert.equal(hasSavedBuyer(full), true);
@@ -11,7 +12,18 @@ assert.equal(savedBuyerOk({ ...full, postcode: 'warszawa' }), false);
 assert.equal(buyerLine(full), 'Anna Test · 500600700 · Testowa 1 · 00-001 · Warszawa');
 assert.equal(storedBuyer(full), null);
 assert.equal(storedBuyer({ ...full, remember: true }).name, 'Anna Test');
-assert.match(COD_NOTE, /28 zł/);
 assert.equal(BLIK_COPY, '796 669 157');
+const line = { product_id: '11111111-1111-4111-8111-111111111111', qty: 1, size: '', color: '' };
+const buyer = { name: 'Anna Test', phone: '500600700', email: '', street: 'Testowa 1', postcode: '00-001', city: 'Warszawa', delivery: 'dpd_home', note: '', terms: true };
+assert.equal(validateCheckout({ ...buyer, payment: 'blik' }, [line]).ok, true);
+assert.equal(validateCheckout({ ...buyer, payment: 'transfer' }, [line]).ok, true);
+assert.equal(validateCheckout({ ...buyer, payment: 'cod' }, [line]).ok, false);
+assert.equal(validateCheckout({ ...buyer, payment: '' }, [line]).errors.payment, 'Wybierz sposób płatności.');
+assert.equal(mapOrderError('choice'), 'Wybierz BLIK albo przelew');
+const oldOrder = thanksLines({ to_pay_now: 28, order_no: 'KS1041', payment: 'cod', cod_amount: 67 });
+assert.equal(oldOrder.some((row) => row === 'Przy odbiorze zapłacisz kurierowi: 67,00 zł'), true);
+const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
+assert.doesNotMatch(shop, /cod-note|COD_NOTE|name="payment" value="cod"/);
+assert.match(shop, /draft\.payment === 'cod'/);
 assert.equal(SLOGANS.length, 7);
 console.log('checkout-check ok');

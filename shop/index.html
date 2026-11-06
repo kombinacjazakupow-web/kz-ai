@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="KOMBI Sklep — ubrania z dostawą DPD. Płatność BLIK, przelew albo pobranie.">
+  <meta name="description" content="KOMBI Sklep — ubrania z dostawą DPD. Płatność BLIK lub przelew.">
   <meta name="format-detection" content="telephone=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -18,16 +18,16 @@
   <script type="importmap">
   {
     "imports": {
-      "#common": "./common.js?v=17",
-      "#variants": "./variants.js?v=17",
-      "#window": "./window.js?v=17",
-      "#buy": "./buy.js?v=17",
-      "#checkout": "./checkout.js?v=17",
-      "#los": "./los.js?v=17",
-      "#rolki": "./rolki.js?v=17",
-      "#install": "./install.js?v=17",
-      "#soon": "./soon.js?v=17",
-      "#account": "./account.js?v=17"
+      "#common": "./common.js?v=18",
+      "#variants": "./variants.js?v=18",
+      "#window": "./window.js?v=18",
+      "#buy": "./buy.js?v=18",
+      "#checkout": "./checkout.js?v=18",
+      "#los": "./los.js?v=18",
+      "#rolki": "./rolki.js?v=18",
+      "#install": "./install.js?v=18",
+      "#soon": "./soon.js?v=18",
+      "#account": "./account.js?v=18"
     }
   }
   </script>
@@ -40,7 +40,7 @@
   </div>
   <noscript><p class="noscript">Włącz JavaScript, żeby otworzyć sklep.</p></noscript>
   <script type="module">
-    import('./shop.js?v=17').catch(() => {
+    import('./shop.js?v=18').catch(() => {
       const el = document.getElementById('app');
       if (el) el.textContent = 'Nie udało się załadować sklepu. Sprawdź połączenie i odśwież.';
     });
