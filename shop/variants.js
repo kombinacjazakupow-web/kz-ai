@@ -10,9 +10,65 @@ export function cleanVariants(rows) {
     const color = String(row?.color || '').trim();
     const stock = Number(row?.stock);
     if (!productId || !color || !Number.isFinite(stock)) continue;
-    out.push({ product_id: productId, color, stock: Math.max(0, Math.floor(stock)) });
+    const rawSeconds = row?.video_seconds;
+    const seconds = rawSeconds == null || rawSeconds === '' ? Number.NaN : Number(rawSeconds);
+    out.push({
+      product_id: productId,
+      color,
+      stock: Math.max(0, Math.floor(stock)),
+      video_seconds: Number.isFinite(seconds) && seconds >= 0 ? seconds : null,
+      ai_photo: safePhoto(row?.ai_photo),
+    });
   }
   return out;
+}
+
+function safePhoto(value) {
+  const raw = String(value || '').trim().replace(/^\/+/, '');
+  if (!raw || /[\\:?#]/.test(raw) || raw.includes('://')) return '';
+  if (raw.split('/').some((part) => !part || part === '.' || part === '..')) return '';
+  return raw;
+}
+
+export function modelPhoto(product, color, variants) {
+  const mine = (Array.isArray(variants) ? variants : []).filter((row) => row.product_id === product?.id && row.ai_photo);
+  if (!mine.length) return '';
+  const want = String(color || '').trim().toLocaleLowerCase('pl');
+  if (!want) return mine[0].ai_photo;
+  const hit = mine.find((row) => row.color.toLocaleLowerCase('pl') === want);
+  return hit ? hit.ai_photo : '';
+}
+
+export function colorMoment(product, color, variants) {
+  const want = String(color || '').trim().toLocaleLowerCase('pl');
+  if (!want) return null;
+  const hit = (Array.isArray(variants) ? variants : []).find((row) => row.product_id === product?.id && row.color.toLocaleLowerCase('pl') === want);
+  if (hit?.video_seconds == null || hit.video_seconds === '') return null;
+  const seconds = Number(hit.video_seconds);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+export function momentReady(duration) {
+  const n = Number(duration);
+  return Number.isFinite(n) && n > 0;
+}
+
+export function momentSliderValue(saved, duration) {
+  if (!momentReady(duration)) return null;
+  if (saved == null || saved === '') return null;
+  const seconds = Number(saved);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.min(seconds, Number(duration));
+}
+
+export function momentText(seconds) {
+  if (seconds == null || seconds === '') return '';
+  const n = Number(seconds);
+  if (!Number.isFinite(n) || n < 0) return '';
+  let whole = Math.floor(n);
+  let tenth = Math.round((n - whole) * 10);
+  if (tenth === 10) { tenth = 0; whole += 1; }
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')},${tenth}`;
 }
 
 export function colorViews(product, variants) {
@@ -44,6 +100,25 @@ export function isSoldOut(product, variants) {
   }
   const stock = Number(product?.stock);
   return Number.isFinite(stock) && stock <= 0;
+}
+
+export function stockPhrase(stock) {
+  if (stock == null || stock === '') return '';
+  const n = Number(stock);
+  if (!Number.isFinite(n) || n < 0) return '';
+  const whole = Math.floor(n);
+  return whole > 20 ? 'dużo sztuk' : String(whole);
+}
+
+export function liveStockText(product, variants) {
+  const views = colorViews(product, variants);
+  if (views.length && views.every((view) => view.stock != null)) {
+    const total = views.reduce((sum, view) => sum + view.stock, 0);
+    const parts = views.map((view) => `${view.name}: ${stockPhrase(view.stock)}`);
+    return `Zostało: ${stockPhrase(total)}. ${parts.join('. ')}.`;
+  }
+  const phrase = stockPhrase(product?.stock);
+  return phrase ? `Zostało: ${phrase}.` : '';
 }
 
 export function freshBadge(product, variants) {

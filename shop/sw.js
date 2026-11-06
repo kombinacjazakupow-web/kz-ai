@@ -1,6 +1,6 @@
 // Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
-// Shell scripts share ?v=12 so a new shop.js cannot run with an older common.js.
-const VERSION = '12';
+// Shell scripts share ?v=14 so a new shop.js cannot run with an older common.js.
+const VERSION = '14';
 const CACHE = `kombi-sklep-shell-v${VERSION}`;
 const SHELL = [
   './',
@@ -56,6 +56,7 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (url.hostname === 'r2.selmo.io') return;
   if (url.hostname.endsWith('supabase.co') || url.hostname.includes('supabase')) return;
   if (url.origin !== self.location.origin) return;
   if (url.search && url.search !== `?v=${VERSION}`) return;

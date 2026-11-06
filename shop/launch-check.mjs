@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
-  SLOGANS, LAUNCH_BANNER, PAY_WINDOW, PROOF_OK, LUCKY_LABEL,
+  SLOGANS, PAY_WINDOW, PROOF_OK, LUCKY_LABEL,
   pickSlogan, proofObjectPath, proofKind, mapProofResult, parseRoute, videoSrc, rememberOrder,
   orderAttemptKey, buildOrderPayload, ORDER_UNSURE,
 } from './common.js';
@@ -22,7 +23,14 @@ for (let i = 0; i < 40; i += 1) assert.ok(expected.includes(pickSlogan()));
 assert.equal(pickSlogan(() => 0), expected[0]);
 assert.equal(pickSlogan(() => 0.999), expected[6]);
 
-assert.equal(LAUNCH_BANNER, '04.11.2026 \u2013 startujemy z naszą pierwszą aplikacją! \u{1F389} Ceny startowe dla pierwszych zamówień w aplikacji.');
+const common = readFileSync(new URL('./common.js', import.meta.url), 'utf8');
+const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
+const css = readFileSync(new URL('./shop.css', import.meta.url), 'utf8');
+assert.equal(common.includes('LAUNCH_BANNER'), false);
+assert.equal(common.includes('startujemy z naszą pierwszą aplikacją'), false);
+assert.equal(shop.includes('LAUNCH_BANNER'), false);
+assert.equal(shop.includes('class="launch"'), false);
+assert.equal(css.includes('.launch'), false);
 assert.equal(PAY_WINDOW, 'Zapłać w ciągu 1 godziny i dołącz potwierdzenie');
 assert.equal(PROOF_OK, 'Potwierdzenie wysłane \u2705 \u2013 sprawdzimy i potwierdzimy');
 assert.equal(LUCKY_LABEL, 'Wylosuj swoje szczęście \u{1F340}');

@@ -2,14 +2,15 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
-  LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
+  PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, hangerSrc, sameHangerFilm, playbackHeld, photosAfterPoster, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket, FACEBOOK_LOGIN,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
-  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
+  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookClip, facebookPlayer, soldShopLine,
+  META_PIXEL_ID, META_CHOICE_KEY, metaOn, metaPayload, metaPurchase,
 } from '#common';
 import {
-  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
+  cleanVariants, colorBasket, colorMoment, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, liveStockText, modelPhoto, orderCatalog, roomForColor, stockForColor, variantError,
 } from '#variants';
 import { dropRail, dotPaint, newestDrop, visibleDots } from '#window';
 import { buyLabel } from '#buy';
@@ -69,10 +70,21 @@ const state = {
   promoDismissed: false,
   losLine: { home: '', thanks: '' },
   checkoutKey: '',
+  payModal: false,
+  soldCounts: null,
+  soldAsked: false,
+  metaView: '',
+  metaCheckout: false,
+  hangerMuted: true,
+  hangerSeek: null,
 };
 
 let accountGen = 0;
 let booted = false;
+let hangerBox = null;
+let hangerObserver = null;
+let hangerToken = 0;
+let hangerPark = null;
 
 function emptyDraft() {
   return {
@@ -152,6 +164,12 @@ function photoList(product) {
 function letter(title) {
   const ch = String(title || '').trim().charAt(0).toLocaleUpperCase('pl');
   return ch || '·';
+}
+
+function modelShot(path) {
+  const src = photoSrc(path);
+  if (!src) return `<span class="ph" aria-hidden="true">${esc('M')}</span>`;
+  return `<img src="${esc(src)}" alt="Modelka AI" decoding="async" data-fallback="${esc(photoUrl(path))}" referrerpolicy="no-referrer">`;
 }
 
 function thumbHtml(path, alt, eager, width) {
@@ -240,9 +258,15 @@ function paint(opts = {}) {
   const y = opts.keep ? window.scrollY : 0;
   syncPromo();
   document.title = pageTitle();
+  stashHanger();
   root.innerHTML = shell();
   afterPaint();
   window.scrollTo(0, y);
+  if (parseRoute(location.hash).name === 'product' && !state.soldAsked) {
+    state.soldAsked = true;
+    loadSoldCounts();
+  }
+  noteCommerce();
   if (parseRoute(location.hash).name === 'account' && state.session && !state.accountLoaded && !state.accountLoading) {
     loadAccount();
   }
@@ -268,7 +292,7 @@ function shell() {
   const body = mainView();
   const reels = parseRoute(location.hash).name === 'reels';
   if (reels) return `${body}<div id="toast" class="toast" role="status" hidden></div>`;
-  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
+  return `${topbar()}${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>${cookieBar()}`;
 }
 
 function topbar() {
@@ -391,15 +415,25 @@ function productMain(code) {
   }
   syncPick(product);
   const photos = photoList(product);
-  const film = videoSrc(product.video_url);
-  const filmSlide = film
-    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
-    : '';
-  const slides = (filmSlide + (photos.length
-    ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
-    : '')) || `<span class="ph">${esc(letter(product.title))}</span>`;
-  const plan = slidePlan(Boolean(film), photos.length);
-  const labels = [...(film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
+  const hanger = hangerSrc(product.hanger_video_url);
+  const reel = hanger ? '' : facebookReel(product.reel_url);
+  const film = hanger || reel ? '' : videoSrc(product.video_url);
+  const posterTaken = Boolean(reel && photos[0]);
+  const galleryPhotos = photosAfterPoster(photos, posterTaken);
+  const filmSlide = reel
+    ? reelPoster(product, posterTaken ? photos[0] : '', reel)
+    : film
+      ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+      : '';
+  const realSlides = filmSlide + (galleryPhotos.length
+    ? galleryPhotos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
+    : '');
+  const slides = realSlides || (hanger ? '' : `<span class="ph">${esc(letter(product.title))}</span>`);
+  const plan = slidePlan(Boolean(reel || film), galleryPhotos.length);
+  const labels = [
+    ...(reel || film ? ['Film'] : []),
+    ...galleryPhotos.map((_, i) => `Zdjęcie ${posterTaken ? i + 2 : i + 1}`),
+  ];
   const nav = plan.controls
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
@@ -423,13 +457,18 @@ function productMain(code) {
         <button type="button" data-act="pqty" data-dir="1" aria-label="Więcej" ${state.pick.qty >= max ? 'disabled' : ''}>+</button>
       </div>`}`;
   const desc = String(product.description || '').trim();
-  return `<main class="product-page">
-    <p><a class="back" href="#/">← Sklep</a></p>
-    <div class="gal-wrap">
-      <div class="gallery" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
+  const gallery = slides
+    ? `<div class="gal-wrap">
+      <div class="gallery${reel ? ' reel-gallery' : ''}" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
       ${nav}
     </div>
-    ${dots}
+    ${dots}`
+    : '';
+  return `<main class="product-page">
+    <p><a class="back" href="#/">← Sklep</a></p>
+    ${hanger ? hangerPair(product, hanger) : ''}
+    ${gallery}
+    ${liveSection(product)}
     <h1>${esc(product.title || 'Produkt')}</h1>
     <p class="price">${esc(formatZl(product.price))}</p>
     ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
@@ -437,6 +476,64 @@ function productMain(code) {
     ${buy}
     <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
   </main>`;
+}
+
+function hangerPair(product, src) {
+  const photo = modelPhoto(product, state.pick.color, state.variants);
+  const left = photo
+    ? `<div class="hanger-panel"><h2>Modelka AI</h2><div class="hanger-photo" id="model-photo">${modelShot(photo)}</div></div>`
+    : '';
+  const quiet = state.hangerMuted !== false;
+  return `<section class="hanger-pair${left ? '' : ' solo'}" aria-label="Modelka i film z wieszaka">
+    ${left}
+    <div class="hanger-panel">
+      <h2>Film z wieszaka</h2>
+      <button type="button" class="hanger-sound" data-act="hanger-sound" aria-pressed="${quiet ? 'false' : 'true'}" aria-label="${quiet ? 'Włącz dźwięk' : 'Wycisz'}">
+        <video class="hanger-video" ${quiet ? 'muted' : ''} playsinline loop preload="metadata" src="${esc(src)}"></video>
+      </button>
+    </div>
+  </section>`;
+}
+
+function liveSection(product) {
+  const stock = liveStockText(product, state.variants);
+  const sold = state.soldCounts ? soldShopLine(state.soldCounts[String(product.code || '')]) : '';
+  const reel = facebookReel(product.reel_url);
+  const clip = facebookClip(product.live_clip_url);
+  if (!stock && !sold && !reel && !clip) return '';
+  return `<section class="live-note" aria-labelledby="live-heading">
+    <h2 id="live-heading">Jak na live</h2>
+    ${stock ? `<p>${esc(stock)}</p>` : ''}
+    ${sold ? `<p>${esc(sold)}</p>` : ''}
+    ${reel ? `<p><a href="${esc(reel)}" target="_blank" rel="noopener noreferrer">Zobacz film i komentarze na Facebooku</a></p>` : ''}
+    ${clip ? `<div class="clip-slide" data-embed="${esc(clip)}"><button type="button" class="btn ghost block" data-act="clip-play">Fragment z live</button></div>` : ''}
+  </section>`;
+}
+
+function reelPoster(product, photo, reel) {
+  const poster = photo
+    ? thumbHtml(photo, product.title || 'Produkt', true, 800)
+    : `<span class="ph">${esc(letter(product.title))}</span>`;
+  return `<div class="reel-slide" data-embed="${esc(reel)}">
+    <button type="button" class="reel-poster" data-act="reel-play" aria-label="Odtwórz rolkę">
+      ${poster}
+      <span class="reel-play" aria-hidden="true">▶</span>
+    </button>
+  </div>`;
+}
+
+function mountFacebook(host, title) {
+  if (!host || host.querySelector('iframe')) return;
+  const autoplay = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const src = facebookPlayer(host.dataset.embed, autoplay);
+  if (!src) return;
+  const frame = document.createElement('iframe');
+  frame.src = src;
+  frame.title = title;
+  frame.setAttribute('allow', 'autoplay; fullscreen');
+  frame.setAttribute('allowfullscreen', '');
+  frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  host.replaceChildren(frame);
 }
 
 function colorChips(product) {
@@ -692,7 +789,23 @@ function thanksMain(order) {
     ${losCard('thanks')}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
-  </main>`;
+  </main>${state.payModal ? payModalHtml(order) : ''}`;
+}
+
+function payModalHtml(order) {
+  const popup = payPopup(order);
+  if (!popup) return '';
+  const row = (text, copy, label) => `<div class="copyline"><p>${esc(text)}</p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(copy)}" aria-label="${esc(label)}">Kopiuj</button></div>`;
+  return `<div class="pay-shade" id="pay-modal" role="dialog" aria-modal="true" aria-labelledby="pay-title">
+    <div class="pay-card">
+      <h2 id="pay-title">${esc(popup.title)}</h2>
+      ${row(`Do zapłaty teraz: ${popup.amountText}`, popup.copies.amount, 'Kopiuj kwotę')}
+      ${row(popup.blik, popup.copies.blik, 'Kopiuj numer BLIK')}
+      ${row(popup.transfer, popup.copies.transfer, 'Kopiuj numer konta')}
+      ${row(popup.titleLine, popup.copies.orderNo, 'Kopiuj numer zamówienia')}
+      <button type="button" class="btn primary block" data-act="pay-close">Rozumiem</button>
+    </div>
+  </div>`;
 }
 
 function proofBox(orderNo, phone) {
@@ -762,6 +875,7 @@ function accountLogin() {
     <p class="hint">Wyślemy link do logowania na e-mail. Hasło nie jest potrzebne.</p>
     ${accountNoteHtml()}
     <p class="service">${esc(SERVICE_LINE)}</p>
+    ${FACEBOOK_LOGIN ? '<p><button type="button" class="btn block" data-act="facebook">Zaloguj przez Facebooka</button></p>' : ''}
     <form id="magic-link">
       ${field('email', 'E-mail', state.accountDraft.email, 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
       <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
@@ -980,7 +1094,9 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
+  focusPayModal();
   watchReels();
+  watchHanger();
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
   if (!gallery || !dots) return;
@@ -995,6 +1111,143 @@ function afterPaint() {
   };
   gallery.addEventListener('scroll', mark, { passive: true });
   mark();
+}
+
+function focusPayModal() {
+  const dialog = document.getElementById('pay-modal');
+  if (!dialog) return;
+  document.querySelectorAll('#app > :not(#pay-modal)').forEach((el) => { el.inert = true; });
+  const items = () => [...dialog.querySelectorAll('button')];
+  items()[items().length - 1]?.focus();
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      state.payModal = false;
+      paint({ keep: true });
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const buttons = items();
+    if (!buttons.length) return;
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+}
+
+function stashHanger() {
+  const video = document.getElementById('app')?.querySelector('.hanger-video');
+  if (!video) return;
+  if (hangerObserver) {
+    hangerObserver.disconnect();
+    hangerObserver = null;
+  }
+  hangerBox = {
+    node: video,
+    src: video.getAttribute('src') || '',
+    code: state.pick.code,
+    time: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+    playing: !video.paused && !video.ended,
+  };
+  if (!hangerPark) {
+    hangerPark = document.createElement('div');
+    hangerPark.hidden = true;
+    document.body.appendChild(hangerPark);
+  }
+  hangerPark.appendChild(video);
+}
+
+function watchHanger() {
+  if (hangerObserver) {
+    hangerObserver.disconnect();
+    hangerObserver = null;
+  }
+  const fresh = document.getElementById('app')?.querySelector('.hanger-video') || null;
+  const box = hangerBox;
+  hangerBox = null;
+  if (!fresh) {
+    box?.node?.remove();
+    return;
+  }
+  const next = { src: fresh.getAttribute('src') || '', code: state.pick.code };
+  let video = fresh;
+  let restored = null;
+  if (box && sameHangerFilm(box, next)) {
+    fresh.replaceWith(box.node);
+    video = box.node;
+    restored = box;
+  } else box?.node?.remove();
+  video.muted = state.hangerMuted !== false;
+  if (state.hangerSeek != null) seekHangerTo(video, state.hangerSeek);
+  else if (!restored) seekChosenMoment(video);
+  else resumeHanger(video, restored);
+  if (typeof IntersectionObserver !== 'function') {
+    if (!restored || restored.playing || state.hangerSeek != null) video.play().catch(() => {});
+    return;
+  }
+  hangerObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) entry.target.play().catch(() => {});
+      else entry.target.pause();
+    }
+  }, { threshold: [0, 0.6, 1] });
+  hangerObserver.observe(video);
+}
+
+function seekChosenMoment(video) {
+  const route = parseRoute(location.hash);
+  const product = route.name === 'product' ? findProduct(route.code) : null;
+  if (!product) return;
+  const seconds = colorMoment(product, state.pick.color, state.variants);
+  if (seconds == null) return;
+  state.hangerSeek = seconds;
+  seekHangerTo(video, seconds);
+}
+
+function seekHangerTo(video, seconds) {
+  const target = Number(seconds);
+  if (!Number.isFinite(target) || target < 0) return;
+  const token = ++hangerToken;
+  const apply = () => {
+    if (token !== hangerToken) return;
+    try { video.currentTime = target; } catch { /* the film is not ready yet */ }
+    video.play().catch(() => {});
+    if (playbackHeld(video.currentTime, target)) {
+      state.hangerSeek = null;
+      return;
+    }
+    const onSeeked = () => {
+      if (token !== hangerToken) {
+        video.removeEventListener('seeked', onSeeked);
+        return;
+      }
+      if (!playbackHeld(video.currentTime, target)) return;
+      video.removeEventListener('seeked', onSeeked);
+      state.hangerSeek = null;
+    };
+    video.addEventListener('seeked', onSeeked);
+  };
+  if (video.readyState >= 1) apply();
+  else video.addEventListener('loadedmetadata', apply, { once: true });
+}
+
+function resumeHanger(video, box) {
+  const token = ++hangerToken;
+  const apply = () => {
+    if (token !== hangerToken) return;
+    if (Number.isFinite(box.time) && !playbackHeld(video.currentTime, box.time)) {
+      try { video.currentTime = box.time; } catch { /* the film is not ready yet */ }
+    }
+    if (box.playing) video.play().catch(() => {});
+  };
+  if (video.readyState >= 1) apply();
+  else video.addEventListener('loadedmetadata', apply, { once: true });
 }
 
 function watchReels() {
@@ -1112,7 +1365,7 @@ async function placeOrder(form) {
         failed = ORDER_UNSURE;
       } else {
         state.checkoutKey = '';
-        saveThanks({
+        const thanks = {
           order_no: body.order_no,
           products_total: body.products_total,
           delivery_fee: body.delivery_fee,
@@ -1120,7 +1373,11 @@ async function placeOrder(form) {
           cod_amount: body.cod_amount,
           payment: payload.payment,
           phone: payload.phone,
-        });
+        };
+        saveThanks(thanks);
+        state.payModal = !!payPopup(thanks);
+        const purchase = metaPurchase(body.to_pay_now, body.order_no);
+        if (purchase) trackMeta(purchase.event, purchase.params, purchase.eventID);
         setBasket([]);
         saveDraft({ ...state.draft, note: '', terms: false });
       }
@@ -1141,6 +1398,7 @@ function syncPick(product) {
     .map((view) => view.name);
   if (state.pick.code !== String(product.code)) {
     state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
+    state.hangerSeek = null;
   }
   state.pick.size = settleOption(sizes, state.pick.size);
   state.pick.color = settleOption(available, state.pick.color);
@@ -1175,7 +1433,15 @@ function addCurrent() {
   if (count) count.textContent = n ? String(n) : '';
   const link = document.querySelector('.cartlink');
   if (link) link.setAttribute('aria-label', `Koszyk, ${n} szt.`);
-  if (result.added > 0) toast('Dodano.', { href: '#/koszyk', label: 'Do kasy' });
+  if (result.added > 0) {
+    trackMeta('AddToCart', {
+      content_ids: [String(product.code || '')],
+      content_type: 'product',
+      value: (Number(product.price) || 0) * result.added,
+      currency: 'PLN',
+    });
+    toast('Dodano.', { href: '#/koszyk', label: 'Do kasy' });
+  }
   else toast('W koszyku jest już cały dostępny stan.');
 }
 
@@ -1258,6 +1524,13 @@ function onClick(event) {
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
     else {
+      const seconds = colorMoment(product, chosen, state.variants);
+      state.hangerSeek = seconds == null ? null : seconds;
+      const video = document.querySelector('.hanger-video');
+      if (video && seconds != null && video.readyState >= 1) {
+        try { video.currentTime = seconds; } catch { /* the film is not ready yet */ }
+        video.play().catch(() => {});
+      }
       state.pick.color = chosen;
       paint({ keep: true });
       return;
@@ -1291,6 +1564,43 @@ function onClick(event) {
     const allowance = product ? allowanceFor(product, line.color) : undefined;
     if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
     else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'meta-yes' || act === 'meta-no') {
+    saveMetaChoice(act === 'meta-yes' ? 'yes' : 'no');
+    if (act === 'meta-yes') ensurePixel();
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'facebook') {
+    if (!FACEBOOK_LOGIN) return;
+    sb.auth.signInWithOAuth({
+      provider: 'facebook',
+      options: { redirectTo: location.origin + location.pathname },
+    });
+    return;
+  }
+  if (act === 'hanger-sound') {
+    const video = target.querySelector('video');
+    if (!video) return;
+    video.muted = !video.muted;
+    state.hangerMuted = video.muted;
+    target.setAttribute('aria-pressed', video.muted ? 'false' : 'true');
+    target.setAttribute('aria-label', video.muted ? 'Włącz dźwięk' : 'Wycisz');
+    if (video.paused) video.play().catch(() => {});
+    return;
+  }
+  if (act === 'reel-play') {
+    mountFacebook(target.closest('[data-embed]'), 'Rolka na Facebooku');
+    return;
+  }
+  if (act === 'clip-play') {
+    mountFacebook(target.closest('[data-embed]'), 'Fragment z live');
+    return;
+  }
+  if (act === 'pay-close') {
+    state.payModal = false;
     paint({ keep: true });
     return;
   }
@@ -1425,6 +1735,27 @@ async function copyFrom(button) {
   setTimeout(() => { button.textContent = button.dataset.label || 'Kopiuj'; }, 2000);
 }
 
+async function loadSoldCounts() {
+  try {
+    const { data, error } = await sb.rpc('shop_sold_counts');
+    if (error || !Array.isArray(data)) {
+      state.soldCounts = null;
+      return;
+    }
+    const map = {};
+    for (const row of data) {
+      const code = String(row?.code || '');
+      const sold = Number(row?.sold);
+      if (!code || !Number.isFinite(sold)) continue;
+      map[code] = Math.floor(sold);
+    }
+    state.soldCounts = map;
+    if (booted) paint({ keep: true });
+  } catch {
+    state.soldCounts = null;
+  }
+}
+
 async function loadProducts() {
   state.loading = true;
   state.error = '';
@@ -1450,10 +1781,86 @@ async function loadProducts() {
 }
 
 async function loadVariants() {
-  const { data, error } = await sb.from('shop_variants').select('product_id,color,stock');
+  const { data, error } = await sb.from('shop_variants').select('product_id,color,stock,video_seconds,ai_photo');
   if (error) return;
   state.variants = cleanVariants(data);
   paint({ keep: true });
+}
+
+function metaChoice() {
+  try { return localStorage.getItem(META_CHOICE_KEY) || ''; } catch { return ''; }
+}
+
+function saveMetaChoice(value) {
+  try { localStorage.setItem(META_CHOICE_KEY, value); } catch { /* the choice stays for this view only */ }
+}
+
+function cookieBar() {
+  if (!metaOn() || metaChoice()) return '';
+  return `<div class="cookiebar" role="dialog" aria-label="Ciasteczka">
+    <p>Możemy zapisać, które strony oglądasz, żeby mierzyć sklep.</p>
+    <div class="cookie-actions">
+      <button type="button" class="btn primary" data-act="meta-yes">Akceptuję</button>
+      <button type="button" class="btn ghost" data-act="meta-no">Odrzucam</button>
+    </div>
+  </div>`;
+}
+
+let pixelStarted = false;
+
+function ensurePixel() {
+  if (!metaOn() || metaChoice() !== 'yes' || pixelStarted) return;
+  pixelStarted = true;
+  if (!window.fbq) {
+    const queue = function () {
+      queue.callMethod ? queue.callMethod.apply(queue, arguments) : queue.queue.push(arguments);
+    };
+    queue.queue = [];
+    queue.loaded = true;
+    queue.version = '2.0';
+    window.fbq = queue;
+  }
+  window.fbq('init', String(META_PIXEL_ID).trim());
+  window.fbq('track', 'PageView');
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  document.head.appendChild(script);
+}
+
+function trackMeta(event, params, eventID) {
+  if (!metaOn() || metaChoice() !== 'yes') return;
+  ensurePixel();
+  const clean = metaPayload(event, params, eventID);
+  if (typeof window.fbq !== 'function') return;
+  if (clean.eventID) window.fbq('track', clean.event, clean.params, { eventID: clean.eventID });
+  else window.fbq('track', clean.event, clean.params);
+}
+
+function noteCommerce() {
+  if (!metaOn() || metaChoice() !== 'yes') return;
+  const route = parseRoute(location.hash);
+  if (route.name === 'product') {
+    const product = findProduct(route.code);
+    const code = String(product?.code || '');
+    if (code && state.metaView !== code) {
+      state.metaView = code;
+      trackMeta('ViewContent', { content_ids: [code], content_type: 'product' });
+    }
+  } else state.metaView = '';
+  if (route.name === 'checkout' && state.basket.length) {
+    if (!state.metaCheckout) {
+      state.metaCheckout = true;
+      const open = pricedLines().filter((line) => !colourGone(line));
+      const totals = previewTotals(open);
+      trackMeta('InitiateCheckout', {
+        content_ids: open.map((line) => String(line.code || '')).filter(Boolean),
+        content_type: 'product',
+        value: totals.preview,
+        currency: 'PLN',
+      });
+    }
+  } else state.metaCheckout = false;
 }
 
 function start() {
@@ -1465,6 +1872,7 @@ function start() {
   state.draft = storedDraft ? { ...emptyDraft(), ...storedDraft } : emptyDraft();
   state.thanks = loadThanks();
   try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
+  ensurePixel();
   const root = document.getElementById('app');
   root.addEventListener('load', (event) => {
     const img = event.target;
@@ -1559,7 +1967,7 @@ if (typeof window !== 'undefined') {
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=12', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=14', { scope: './' }).catch(() => {});
     });
   }
 }

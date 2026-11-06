@@ -10,12 +10,14 @@ export const BLIK_LINE = 'BLIK na telefon: 796 669 157 (Fikrie Ali)';
 export const TRANSFER_LINE = 'Przelew: PL24 2910 0006 0000 0000 0571 2568 (Sergen Kushdan)';
 export const BLIK_COPY = '796 669 157';
 export const TRANSFER_COPY = 'PL24 2910 0006 0000 0000 0571 2568';
+export const FACEBOOK_LOGIN = false;
+export const META_PIXEL_ID = '2239797080173159';
+export const META_CHOICE_KEY = 'kombi-shop-meta';
 
 export const BASKET_KEY = 'kombi-shop-basket';
 export const DRAFT_KEY = 'kombi-shop-draft';
 export const THANKS_KEY = 'kombi-shop-thanks';
 export const ORDERS_KEY = 'kombi-shop-orders';
-export const LAUNCH_BANNER = '04.11.2026 \u2013 startujemy z nasz\u0105 pierwsz\u0105 aplikacj\u0105! \u{1F389} Ceny startowe dla pierwszych zam\u00f3wie\u0144 w aplikacji.';
 export const PAY_WINDOW = 'Zap\u0142a\u0107 w ci\u0105gu 1 godziny i do\u0142\u0105cz potwierdzenie';
 export const PROOF_LABEL = 'Do\u0142\u0105cz potwierdzenie p\u0142atno\u015bci';
 export const PROOF_OK = 'Potwierdzenie wys\u0142ane \u2705 \u2013 sprawdzimy i potwierdzimy';
@@ -104,10 +106,118 @@ export function videoSrc(value) {
   return photoUrl(raw);
 }
 
+export function hangerSrc(value) {
+  const raw = String(value || '').trim();
+  let url;
+  try { url = new URL(raw); } catch { return ''; }
+  if (url.protocol !== 'https:' || url.username || url.password) return '';
+  if (url.hostname !== 'r2.selmo.io') return '';
+  return `${url.origin}${url.pathname}${url.search}`;
+}
+
+export function sameHangerFilm(kept, next) {
+  if (!kept || !next) return false;
+  const src = String(kept.src || '');
+  return src !== '' && src === String(next.src || '') && String(kept.code || '') === String(next.code || '');
+}
+
+export function playbackHeld(current, target) {
+  const at = Number(current);
+  const want = Number(target);
+  if (!Number.isFinite(at) || !Number.isFinite(want)) return false;
+  return Math.abs(at - want) < 0.05;
+}
+
 export function slidePlan(hasFilm, photoCount) {
   const photos = Math.max(0, Math.floor(Number(photoCount)) || 0);
   const total = (hasFilm ? 1 : 0) + photos;
   return { total, controls: total > 1 };
+}
+
+export function photosAfterPoster(photos, posterTaken) {
+  const list = Array.isArray(photos) ? photos : [];
+  if (posterTaken && list.length) return list.slice(1);
+  return list;
+}
+
+export function payPopup(order) {
+  const payment = String(order?.payment || '');
+  if (payment !== 'blik' && payment !== 'transfer' && payment !== 'cod') return null;
+  const amount = Number(order?.to_pay_now);
+  if (!Number.isFinite(amount)) return null;
+  const orderNo = String(order?.order_no ?? '');
+  const amountText = formatZl(amount);
+  return {
+    title: 'Zrób przelew ze swojego banku',
+    amountText,
+    blik: BLIK_LINE,
+    transfer: TRANSFER_LINE,
+    titleLine: `W tytule wpisz numer zamówienia: ${orderNo}`,
+    copies: {
+      amount: amountText,
+      blik: BLIK_COPY,
+      transfer: TRANSFER_COPY,
+      orderNo,
+    },
+  };
+}
+
+const FACEBOOK_REEL = /^https:\/\/www\.facebook\.com\/reel\/\d+$/;
+
+export function facebookReel(value) {
+  const raw = String(value || '').trim();
+  return FACEBOOK_REEL.test(raw) ? raw : '';
+}
+
+export function facebookClip(value) {
+  const raw = String(value || '').trim();
+  if (facebookReel(raw)) return raw;
+  let url;
+  try { url = new URL(raw); } catch { return ''; }
+  if (url.protocol !== 'https:' || url.username || url.password) return '';
+  if (url.hostname !== 'www.facebook.com') return '';
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const ok = path === '/watch'
+    || /^\/reel\/\d+$/.test(path)
+    || /^\/videos\/\d+$/.test(path)
+    || /^\/[^/]+\/videos\/\d+$/.test(path);
+  if (!ok) return '';
+  return `${url.origin}${url.pathname}${url.search}`;
+}
+
+export function metaOn(id = META_PIXEL_ID) {
+  return /^[0-9]{5,20}$/.test(String(id || '').trim());
+}
+
+export function metaPayload(event, params, eventID) {
+  const source = params && typeof params === 'object' ? params : {};
+  const clean = {};
+  if (Array.isArray(source.content_ids)) clean.content_ids = source.content_ids.map((item) => String(item));
+  if (source.content_type) clean.content_type = String(source.content_type);
+  if (source.value != null && Number.isFinite(Number(source.value))) clean.value = Number(source.value);
+  if (source.currency) clean.currency = String(source.currency);
+  return { event: String(event || ''), params: clean, eventID: eventID ? String(eventID) : '' };
+}
+
+export function metaPurchase(amount, orderNo) {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return null;
+  return metaPayload('Purchase', { value, currency: 'PLN' }, orderNo);
+}
+
+export function soldShopLine(count) {
+  if (count == null || count === '') return '';
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return `Sprzedane w sklepie: ${Math.floor(n)}`;
+}
+
+export function facebookPlayer(value, autoplay) {
+  const href = facebookReel(value) || facebookClip(value);
+  if (!href) return '';
+  const params = new URLSearchParams({ href, show_text: 'false' });
+  if (autoplay) params.set('autoplay', 'true');
+  return `https://www.facebook.com/plugins/video.php?${params.toString()}`;
 }
 
 export function proofKind(file) {

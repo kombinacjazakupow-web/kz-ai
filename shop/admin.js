@@ -1,8 +1,9 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import {
-  SUPABASE_URL, SUPABASE_KEY, esc, formatZl, formatWhen, photoUrl, normalizeList,
+  SUPABASE_URL, SUPABASE_KEY, esc, formatZl, formatWhen, photoUrl, normalizeList, splitList, facebookReel, facebookClip, hangerSrc,
   nextProductCode, ownerFlag, parseAdminRoute, sortProducts, ORDER_STATUS, STATUS_NEXT, STATUS_ACTION,
 } from '#common';
+import { momentReady, momentSliderValue, momentText } from '#variants';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },
@@ -33,6 +34,9 @@ const state = {
   productError: '',
   saving: false,
   dropPhotos: new Set(),
+  variantRows: [],
+  momentColor: '',
+  momentTick: {},
 };
 
 let pendingFiles = [];
@@ -77,6 +81,9 @@ function captureProductForm() {
     stock: form.stock?.value ?? '',
     sort: form.sort?.value ?? '',
     video_url: form.video_url?.value ?? '',
+    hanger_video_url: form.hanger_video_url?.value ?? '',
+    reel_url: form.reel_url?.value ?? '',
+    live_clip_url: form.live_clip_url?.value ?? '',
     active: !!form.elements.namedItem('active')?.checked,
   };
 }
@@ -102,6 +109,7 @@ function paint(opts = {}) {
   const y = opts.keep ? window.scrollY : 0;
   document.title = 'Panel · KOMBI Sklep';
   root.innerHTML = shell();
+  bindMoments();
   window.scrollTo(0, y);
 }
 
@@ -212,7 +220,7 @@ function editMain(id) {
   }
   const suggested = nextProductCode(state.products.map((item) => item.code));
   const blank = {
-    code: suggested, title: '', description: '', price: '', sizes: '', colors: '', stock: 1, sort: 0, video_url: '', active: true,
+    code: suggested, title: '', description: '', price: '', sizes: '', colors: '', stock: 1, sort: 0, video_url: '', hanger_video_url: '', reel_url: '', live_clip_url: '', active: true,
   };
   const saved = product ? {
     code: product.code || '',
@@ -224,6 +232,9 @@ function editMain(id) {
     stock: product.stock ?? 0,
     sort: product.sort ?? 0,
     video_url: product.video_url || '',
+    hanger_video_url: product.hanger_video_url || '',
+    reel_url: product.reel_url || '',
+    live_clip_url: product.live_clip_url || '',
     active: product.active !== false,
   } : blank;
   const value = state.formDraft || saved;
@@ -253,6 +264,10 @@ function editMain(id) {
       ${input('sort', 'Kolejność', value.sort ?? 0, err.sort, 'inputmode="numeric" step="1"', 'number')}
       <label class="check"><input id="active" name="active" type="checkbox"${value.active !== false ? ' checked' : ''}><span>Aktywny w sklepie</span></label>
       ${input('video_url', 'Film', value.video_url || '', err.video_url, 'placeholder="https://… albo poślemy plik niżej" spellcheck="false"')}
+      ${input('hanger_video_url', 'Film z wieszaka', value.hanger_video_url || '', err.hanger_video_url, 'placeholder="https://r2.selmo.io/…" spellcheck="false" inputmode="url"')}
+      ${momentsHtml(product, value)}
+      ${input('reel_url', 'Rolka Facebook', value.reel_url || '', err.reel_url, 'placeholder="https://www.facebook.com/reel/123" spellcheck="false" inputmode="url"')}
+      ${input('live_clip_url', 'Fragment z live', value.live_clip_url || '', err.live_clip_url, 'placeholder="https://www.facebook.com/…" spellcheck="false" inputmode="url"')}
       <label class="file">Film MP4 lub MOV
         <input id="video" name="video" type="file" accept="video/mp4,video/quicktime,.mp4,.mov">
       </label>
@@ -278,6 +293,88 @@ function input(id, label, value, error, extra, type = 'text') {
     <input id="${id}" name="${id}" type="${type}" value="${esc(value ?? '')}" ${error ? 'aria-invalid="true"' : ''} ${extra || ''}>
     ${error ? `<small class="field-error">${esc(error)}</small>` : ''}
   </label>`;
+}
+
+function momentList(product, colorsText) {
+  const names = splitList(colorsText || product?.colors);
+  const rows = (state.variantRows || []).filter((row) => row.product_id === product?.id);
+  const seen = new Set();
+  const out = [];
+  const add = (name) => {
+    const label = String(name || '').trim();
+    const key = label.toLocaleLowerCase('pl');
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const row = rows.find((item) => String(item.color || '').trim().toLocaleLowerCase('pl') === key) || null;
+    out.push({ name: label, row });
+  };
+  names.forEach(add);
+  rows.forEach((row) => add(row.color));
+  return out;
+}
+
+function momentsHtml(product, value) {
+  const src = hangerSrc(value?.hanger_video_url || product?.hanger_video_url);
+  if (!src || !product?.id) return '';
+  const colours = momentList(product, value?.colors);
+  if (!colours.length) return '';
+  const picked = colours.find((item) => item.name === state.momentColor) || colours[0];
+  const chips = colours.map((item) => {
+    const on = item.name === picked.name;
+    const marked = item.row && state.momentTick[item.row.id] != null;
+    const saved = marked ? state.momentTick[item.row.id] : item.row?.video_seconds;
+    const time = saved != null && saved !== '' && Number.isFinite(Number(saved)) && Number(saved) >= 0 ? momentText(saved) : '';
+    const suffix = marked && time ? ` · ✓ ${time}` : (time ? ` · ${time}` : '');
+    return `<button type="button" class="chip${on ? ' on' : ''}" data-act="moment-color" data-color="${esc(item.name)}" data-id="${item.row ? esc(String(item.row.id)) : ''}" data-seconds="${item.row && item.row.video_seconds != null ? esc(String(item.row.video_seconds)) : ''}" aria-pressed="${on ? 'true' : 'false'}">${esc(item.name)}${esc(suffix)}</button>`;
+  }).join('');
+  const uploads = colours.map((item) => {
+    if (!item.row) return `<p>${esc(item.name)}: najpierw musi być wariant tego koloru.</p>`;
+    const preview = item.row.ai_photo && photoUrl(item.row.ai_photo)
+      ? `<img src="${esc(photoUrl(item.row.ai_photo))}" alt="" referrerpolicy="no-referrer">`
+      : '';
+    return `<div class="moment-photo">${preview}<label class="file">Zdjęcie modelki · ${esc(item.name)}<input type="file" accept="image/*" data-model-photo="1" data-variant="${esc(String(item.row.id))}" data-code="${esc(product.code || '')}"></label></div>`;
+  }).join('');
+  const tick = picked.row && state.momentTick[picked.row.id] != null
+    ? `<p id="moment-note" role="status">✓ ${esc(momentText(state.momentTick[picked.row.id]))}</p>`
+    : '<p id="moment-note" role="status"></p>';
+  return `<section class="moments">
+    <h2>Momenty kolorów</h2>
+    <video id="moment-video" playsinline muted preload="metadata" src="${esc(src)}"></video>
+    <label class="field" for="moment-range"><span>Moment w filmie</span>
+      <input id="moment-range" class="moment-range" type="range" min="0" max="0" step="0.1" value="0" disabled>
+    </label>
+    <div class="chip-row">${chips}</div>
+    ${tick}
+    <button type="button" class="btn primary" id="save-moment" data-act="save-moment" disabled>Zapisz moment</button>
+    ${uploads}
+  </section>`;
+}
+
+function bindMoments() {
+  const video = document.getElementById('moment-video');
+  const range = document.getElementById('moment-range');
+  if (!video || !range) return;
+  const fit = () => {
+    if (!momentReady(video.duration)) return;
+    range.disabled = false;
+    range.max = String(video.duration);
+    const save = document.getElementById('save-moment');
+    if (save) save.disabled = false;
+    const picked = document.querySelector('[data-act="moment-color"].on');
+    const at = momentSliderValue(picked?.dataset.seconds, video.duration);
+    if (at == null) return;
+    range.value = String(at);
+    try { video.currentTime = at; } catch { /* the film is not ready yet */ }
+  };
+  video.addEventListener('loadedmetadata', fit);
+  if (video.readyState >= 1) fit();
+  range.addEventListener('input', () => {
+    if (!momentReady(video.duration)) return;
+    const at = Number(range.value);
+    const apply = () => { try { video.currentTime = at; } catch { /* the film is not ready yet */ } };
+    if (video.readyState >= 1) apply();
+    else video.addEventListener('loadedmetadata', apply, { once: true });
+  });
 }
 
 function ordersMain() {
@@ -513,7 +610,12 @@ async function enter(session) {
 }
 
 async function refreshProducts() {
-  const { data, error } = await sb.from('shop_products').select('*').order('sort', { ascending: true }).order('created_at', { ascending: false });
+  const [productsRes, variantsRes] = await Promise.all([
+    sb.from('shop_products').select('*').order('sort', { ascending: true }).order('created_at', { ascending: false }),
+    sb.from('shop_variants').select('id,product_id,color,stock,video_seconds,ai_photo'),
+  ]);
+  const { data, error } = productsRes;
+  if (!variantsRes.error) state.variantRows = variantsRes.data || [];
   if (error) state.productsError = isPermission(error) ? 'Brak dostępu do produktów.' : 'Nie udało się pobrać produktów.';
   else {
     state.productsError = '';
@@ -620,6 +722,9 @@ function validateProduct(value, editingId) {
   if (price == null) errors.price = 'Podaj cenę, na przykład 79.00.';
   if (!/^\d+$/.test(value.stock.trim())) errors.stock = 'Stan magazynu: liczba sztuk, 0 albo więcej.';
   if (value.sort.trim() && !/^\d+$/.test(value.sort.trim())) errors.sort = 'Kolejność: liczba, na przykład 10.';
+  if (String(value.hanger_video_url || '').trim() && !hangerSrc(value.hanger_video_url)) errors.hanger_video_url = 'Film z wieszaka musi być adresem https://r2.selmo.io/.';
+  if (String(value.reel_url || '').trim() && !facebookReel(value.reel_url)) errors.reel_url = 'Adres rolki zaczyna się od https://www.facebook.com/reel/ i ma sam numer.';
+  if (String(value.live_clip_url || '').trim() && !facebookClip(value.live_clip_url)) errors.live_clip_url = 'Fragment z live musi być filmem na www.facebook.com.';
   return {
     ok: Object.keys(errors).length === 0,
     errors,
@@ -731,6 +836,9 @@ async function saveProduct(form) {
     stock: form.stock.value,
     sort: form.sort.value,
     video_url: form.video_url?.value || '',
+    hanger_video_url: form.hanger_video_url?.value || '',
+    reel_url: form.reel_url?.value || '',
+    live_clip_url: form.live_clip_url?.value || '',
   };
   const active = !!form.elements.namedItem('active')?.checked;
   state.formDraft = {
@@ -776,6 +884,9 @@ async function saveProduct(form) {
       active,
       photos,
       video_url: String(state.formDraft?.video_url || '').trim(),
+      hanger_video_url: hangerSrc(value.hanger_video_url) || null,
+      reel_url: facebookReel(value.reel_url) || null,
+      live_clip_url: facebookClip(value.live_clip_url) || null,
     };
     const write = editingId
       ? sb.from('shop_products').update(payload).eq('id', editingId).select('id')
@@ -885,6 +996,22 @@ function onClick(event) {
     paint({ keep: true });
     return;
   }
+  if (act === 'moment-color') {
+    state.momentColor = target.dataset.color || '';
+    document.querySelectorAll('[data-act="moment-color"]').forEach((button) => {
+      const on = button === target;
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const video = document.getElementById('moment-video');
+    const range = document.getElementById('moment-range');
+    const at = momentSliderValue(target.dataset.seconds, video?.duration);
+    if (at == null || !video || !range) return;
+    range.value = String(at);
+    try { video.currentTime = at; } catch { /* the film is not ready yet */ }
+    return;
+  }
+  if (act === 'save-moment') { saveMoment(); return; }
   if (act === 'drop-file') {
     captureProductForm();
     const index = Number(target.dataset.idx);
@@ -894,8 +1021,65 @@ function onClick(event) {
   }
 }
 
+async function saveMoment() {
+  const picked = document.querySelector('[data-act="moment-color"].on');
+  const id = picked?.dataset.id || '';
+  const range = document.getElementById('moment-range');
+  const video = document.getElementById('moment-video');
+  const note = document.getElementById('moment-note');
+  if (!id) {
+    toast('Ten kolor nie ma jeszcze wariantu.');
+    return;
+  }
+  if (!range || range.disabled || !momentReady(video?.duration)) return;
+  const at = Number(range.value);
+  if (!Number.isFinite(at) || at < 0) return;
+  const { error } = await sb.from('shop_variants').update({ video_seconds: at }).eq('id', id);
+  if (error) {
+    toast('Nie udało się zapisać momentu.');
+    return;
+  }
+  const row = state.variantRows.find((item) => String(item.id) === String(id));
+  if (row) row.video_seconds = at;
+  state.momentTick[id] = at;
+  picked.dataset.seconds = String(at);
+  const label = momentText(at);
+  if (note) note.textContent = label ? `✓ ${label}` : '✓';
+  if (label) picked.textContent = `${picked.dataset.color || ''} · ✓ ${label}`;
+}
+
+async function uploadModelPhoto(variantId, code, file) {
+  if (!variantId || !file) return;
+  const safeCode = String(code || '').replace(/[^A-Za-z0-9_-]/g, '') || 'produkt';
+  try {
+    if (file.size > 15 * 1024 * 1024) throw new Error('big');
+    const blob = await resizeToJpeg(file);
+    const path = `products/${safeCode}/${uuid()}.jpg`;
+    const { error } = await sb.storage.from('shop-photos').upload(path, blob, {
+      contentType: 'image/jpeg',
+      cacheControl: '3600',
+      upsert: false,
+    });
+    if (error) throw error;
+    const { error: writeError } = await sb.from('shop_variants').update({ ai_photo: path }).eq('id', variantId);
+    if (writeError) throw writeError;
+    const row = state.variantRows.find((item) => String(item.id) === String(variantId));
+    if (row) row.ai_photo = path;
+    toast('Zdjęcie modelki zapisane.');
+    paint({ keep: true });
+  } catch (err) {
+    toast(err?.message === 'big' ? 'Zdjęcie jest za duże (max 15 MB).' : 'Nie udało się zapisać zdjęcia modelki.');
+  }
+}
+
 function onChange(event) {
   const input = event.target;
+  if (input.dataset.modelPhoto) {
+    const file = input.files && input.files[0];
+    input.value = '';
+    if (file) uploadModelPhoto(input.dataset.variant, input.dataset.code, file);
+    return;
+  }
   if (input.id === 'video') {
     if (state.saving) return;
     const file = input.files && input.files[0];

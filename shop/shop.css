@@ -112,19 +112,6 @@ img { max-width: 100%; }
   mask-image: linear-gradient(#000 42%, transparent 100%);
 }
 
-.launch {
-  position: relative;
-  z-index: 1;
-  margin: 16px 16px 0;
-  padding: 16px;
-  background: var(--cream);
-  color: var(--ink);
-  border-radius: 12px;
-  font-weight: 400;
-  font-size: 16px;
-  line-height: 1.4;
-  box-shadow: var(--shadow) 0 1px 3px;
-}
 .luck { width: 100%; margin: 0 0 16px; }
 .los {
   display: block;
@@ -211,6 +198,41 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
 .reel-title { margin: 0; color: #fff; font-family: var(--serif); font-size: 28px; }
 .reel-bar .btn { min-height: 48px; }
 .product-page { padding-bottom: 96px; }
+.hanger-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 12px; }
+.hanger-pair.solo { grid-template-columns: 1fr; }
+.hanger-panel { min-width: 0; }
+.hanger-panel h2 { margin: 0 0 6px; font-size: 16px; font-weight: 650; line-height: 1.2; }
+.hanger-photo {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--brand-dark);
+}
+.hanger-photo img, .hanger-photo .ph {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hanger-sound { display: block; width: 100%; padding: 0; border: 0; border-radius: 12px; background: var(--brand-dark); cursor: pointer; }
+.hanger-video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 12px; background: var(--brand-dark); }
+.hanger-pair:not(.solo) .hanger-video { aspect-ratio: 3 / 4; }
+.moments { margin: 16px 0; }
+.moments h2 { margin: 0 0 8px; font-family: var(--serif); font-size: 28px; font-weight: 400; }
+.moments video { display: block; width: 100%; max-height: 42vh; border-radius: 12px; background: var(--brand-dark); object-fit: contain; }
+.moment-range { width: 100%; height: 48px; margin: 8px 0; }
+.moments .btn, .moments .chip, .moments .file { min-height: 48px; }
+.moment-photo { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.moment-photo img { width: 72px; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 8px; }
+.live-note { margin: 16px 0 8px; }
+.live-note h2 { margin: 0 0 8px; font-family: var(--serif); font-size: 28px; font-weight: 400; }
+.live-note a { display: inline-flex; align-items: center; min-height: 48px; }
+.clip-slide .btn { min-height: 48px; }
+.clip-slide iframe { display: block; width: 100%; aspect-ratio: 9 / 16; border: 0; border-radius: 12px; }
 .product-page .gallery, .product-page .hero-photo { max-height: 46vh; }
 .buybar {
   position: fixed;
@@ -222,6 +244,44 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
   background: var(--canvas);
   border-top: 1px solid var(--hairline);
 }
+.cookiebar {
+  position: fixed;
+  z-index: 25;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--canvas);
+  color: var(--ink);
+  box-shadow: 0 8px 24px rgba(28, 20, 15, 0.16);
+}
+.cookiebar p { margin: 0 0 8px; }
+.cookie-actions { display: flex; gap: 8px; }
+.cookie-actions .btn { flex: 1; min-height: 48px; }
+.pay-shade {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  background: rgba(28, 20, 15, 0.55);
+}
+.pay-card {
+  width: min(420px, 100%);
+  max-height: min(90dvh, 640px);
+  overflow: auto;
+  padding: 20px 16px;
+  border-radius: 16px;
+  background: var(--canvas);
+  color: var(--ink);
+}
+.pay-card h2 { margin: 0 0 12px; font-family: var(--serif); font-size: 28px; font-weight: 400; }
+.pay-card .btn { min-height: 48px; }
 .toast.bounce { animation: toast-bounce .4s ease; }
 @keyframes toast-bounce {
   0% { transform: translateX(-50%) translateY(8px); }
@@ -229,6 +289,41 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
   100% { transform: translateX(-50%); }
 }
 @media (prefers-reduced-motion: reduce) { .toast.bounce { animation: none; } }
+.product-page .gallery.reel-gallery { aspect-ratio: 9 / 16; max-height: none; }
+.gallery .reel-slide {
+  position: relative;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+.reel-poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--brand-dark);
+  cursor: pointer;
+}
+.reel-poster .blurup, .reel-poster img, .reel-poster .ph { width: 100%; height: 100%; }
+.reel-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(28, 20, 15, 0.72);
+  color: #fff;
+  font-size: 28px;
+}
+.gallery .reel-slide iframe { width: 100%; height: 100%; border: 0; }
 .gallery .product-video {
   flex: 0 0 100%;
   width: 100%;
@@ -874,7 +969,7 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
   main { padding: 32px 32px 48px; }
   body:has(main.reels) { padding: 0; background: #111; }
   main.reels { padding: 0; height: 100dvh; }
-  .launch, .banner, .promo { margin-left: 32px; margin-right: 32px; }
+  .banner, .promo { margin-left: 32px; margin-right: 32px; }
   .banner { width: calc(100% - 64px); }
   h1, .legal h1 { font-size: 48px; letter-spacing: -0.96px; line-height: 1.15; }
   .luck { width: auto; }
