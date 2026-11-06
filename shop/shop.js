@@ -20,7 +20,7 @@ import { INSTALL_HIDE_KEY, installKind } from './install.js';
 import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
-  accountEmptyText, claimCode, claimMessage, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct, SERVICE_LINE, shouldShowPromo,
+  accountEmptyText, claimCode, claimMessage, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct, OTHER_BROWSER_NOTE, SERVICE_LINE, shouldShowPromo,
 } from './account.js';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
@@ -1459,6 +1459,14 @@ function start() {
   booted = true;
   paint();
   loadProducts();
+  if (authError.get('code') && !authError.get('error') && !authError.get('error_description')) {
+    sb.auth.getSession().then(({ data }) => {
+      if (!booted || data?.session) return;
+      state.accountNote = OTHER_BROWSER_NOTE;
+      if (parseRoute(location.hash).name !== 'account') location.hash = '#/konto';
+      else paint({ keep: true });
+    }).catch(() => {});
+  }
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'TOKEN_REFRESHED' || ignoreSameSignIn(event, state.session?.user?.id, session?.user?.id)) {
       state.session = session;

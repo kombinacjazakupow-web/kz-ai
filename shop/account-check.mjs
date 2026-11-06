@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   accountEmptyText, claimMessage, clientStatus, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct,
-  shouldShowPromo, trackUrl, PROMO_CODE, SERVICE_LINE,
+  shouldShowPromo, trackUrl, OTHER_BROWSER_NOTE, PROMO_CODE, SERVICE_LINE,
 } from './account.js';
 import { BLIK_COPY, TRANSFER_COPY, SLOGANS, parseRoute } from './common.js';
 
@@ -41,6 +41,8 @@ assert.equal(ignoreSameSignIn('SIGNED_OUT', 'user-1', ''), false);
 assert.equal(accountEmptyText(0), 'Nie masz jeszcze zamówień na tym koncie.');
 assert.equal(accountEmptyText(2), '');
 assert.equal(SERVICE_LINE, 'WhatsApp Obsługa Klienta +48 792 402 881');
+assert.match(OTHER_BROWSER_NOTE, /innej przeglądarce/);
+assert.match(OTHER_BROWSER_NOTE, /nowy link/);
 assert.equal(SERVICE_LINE.includes('http'), false);
 assert.equal(emailOk('a@b.c'), true);
 assert.equal(emailOk('nie-mail'), false);
@@ -101,6 +103,8 @@ assert.equal(parseRoute('#/').name, 'catalog');
 const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
 assert.match(shop, /emailRedirectTo: location\.origin \+ location\.pathname/);
 assert.match(shop, /signInWithOtp/);
+assert.match(shop, /OTHER_BROWSER_NOTE/);
+assert.match(shop, /getSession\(\)/);
 assert.match(shop, /Moje konto/);
 assert.match(shop, /Śledź paczkę/);
 assert.match(shop, /orderSourceLabel/);
