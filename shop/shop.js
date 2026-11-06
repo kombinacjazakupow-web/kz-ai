@@ -13,7 +13,7 @@ import {
 } from './variants.js';
 import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
 import { buyLabel } from './buy.js';
-import { buyerLine, savedBuyerOk } from './checkout.js';
+import { buyerLine, savedBuyerOk, storedBuyer } from './checkout.js';
 import { LOS_HOME_KEY, keepSlogan, openHomeSurprise } from './los.js';
 import { reelItems, reelOnScreen } from './rolki.js';
 import { INSTALL_HIDE_KEY, installKind } from './install.js';
@@ -76,7 +76,7 @@ let booted = false;
 function emptyDraft() {
   return {
     name: '', phone: '', email: '', street: '', postcode: '', city: '',
-    delivery: '', point_code: '', payment: '', note: '', terms: false,
+    delivery: '', point_code: '', payment: '', note: '', terms: false, remember: false,
   };
 }
 
@@ -100,8 +100,12 @@ function setBasket(lines) {
 }
 
 function saveDraft(draft) {
-  state.draft = { ...emptyDraft(), ...draft };
-  writeJson(DRAFT_KEY, state.draft);
+  const remember = !!draft?.remember;
+  state.draft = { ...emptyDraft(), ...draft, remember };
+  if (remember) writeJson(DRAFT_KEY, state.draft);
+  else {
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
+  }
 }
 
 function saveThanks(order) {
@@ -519,6 +523,10 @@ function checkoutMain() {
     <p class="hint">To jest podgląd. Kwotę do zapłaty potwierdza sklep przy zamówieniu.</p>
     <form id="checkout" novalidate>
       ${buyerFields(draft, err)}
+      <label class="check">
+        <input id="remember" name="remember" type="checkbox"${draft.remember ? ' checked' : ''}>
+        <span>Zapamiętaj imię, telefon i adres na tym telefonie</span>
+      </label>
       <p class="group-label">Dostawa</p>
       ${choice('delivery', 'dpd_home', 'Kurier DPD pod drzwi', draft.delivery)}
       ${choice('delivery', 'dpd_point', 'Punkt lub automat DPD', draft.delivery)}
@@ -547,12 +555,13 @@ function checkoutMain() {
 }
 
 function buyerFields(draft, err) {
-  if (savedBuyerOk(draft) && !state.editBuyer) {
+  if (savedBuyerOk(draft) && draft.remember && !state.editBuyer) {
     const hidden = ['name', 'phone', 'email', 'street', 'postcode', 'city']
       .map((key) => `<input type="hidden" name="${key}" value="${esc(draft[key] || '')}">`)
       .join('');
     return `<div class="note-box remembered">
       <p>${esc(buyerLine(draft))}</p>
+      <button type="button" class="btn ghost" data-act="edit-buyer">Popraw</button>
       <button type="button" class="btn ghost" data-act="not-me">to nie ja</button>
       ${hidden}
     </div>`;
@@ -919,6 +928,8 @@ async function logout() {
   clearAccount();
   state.magicSent = false;
   state.accountNote = '';
+  state.editBuyer = false;
+  saveDraft(emptyDraft());
   try { await sb.auth.signOut({ scope: 'local' }); } catch { /* listener clears the screen */ }
   state.session = null;
   paint();
@@ -1023,6 +1034,7 @@ function readCheckout(form) {
     payment: String(data.get('payment') || ''),
     note: String(data.get('note') || ''),
     terms: !!form.elements.namedItem('terms')?.checked,
+    remember: !!form.elements.namedItem('remember')?.checked,
   };
 }
 
@@ -1160,9 +1172,20 @@ function onClick(event) {
     document.getElementById('kolekcja')?.scrollIntoView({ block: 'start' });
     return;
   }
+  if (act === 'edit-buyer') {
+    state.editBuyer = true;
+    paint({ keep: true });
+    return;
+  }
   if (act === 'not-me') {
     state.editBuyer = true;
-    saveDraft(emptyDraft());
+    saveDraft({
+      ...emptyDraft(),
+      delivery: state.draft.delivery,
+      point_code: state.draft.point_code,
+      payment: state.draft.payment,
+      note: state.draft.note,
+    });
     paint({ keep: true });
     return;
   }
@@ -1422,8 +1445,8 @@ function start() {
   const storedMine = readJson(ORDERS_KEY, []);
   const storedRows = Array.isArray(storedMine) ? storedMine : [];
   state.mine = storedRows.slice().reverse().reduce((list, row) => rememberOrder(list, row), []);
-  const storedDraft = readJson(DRAFT_KEY, {});
-  state.draft = { ...emptyDraft(), ...(storedDraft && typeof storedDraft === 'object' ? storedDraft : {}) };
+  const storedDraft = storedBuyer(readJson(DRAFT_KEY, {}));
+  state.draft = storedDraft ? { ...emptyDraft(), ...storedDraft } : emptyDraft();
   state.thanks = loadThanks();
   try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
   const root = document.getElementById('app');

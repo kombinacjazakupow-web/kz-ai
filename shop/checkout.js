@@ -11,6 +11,11 @@ export function buyerLine(draft) {
   return BUYER_KEYS.map((key) => String(draft?.[key] || '').trim()).filter(Boolean).join(' · ');
 }
 
+export function storedBuyer(stored) {
+  if (!stored || stored.remember !== true) return null;
+  return stored;
+}
+
 export function savedBuyerOk(draft) {
   if (!hasSavedBuyer(draft)) return false;
   const name = String(draft?.name || '').trim();
