@@ -7,6 +7,7 @@ import {
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookClip, facebookPlayer, soldShopLine,
+  META_PIXEL_ID, META_CHOICE_KEY, metaOn, metaPayload, metaPurchase,
 } from '#common';
 import {
   cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, liveStockText, orderCatalog, roomForColor, stockForColor, variantError,
@@ -72,6 +73,8 @@ const state = {
   payModal: false,
   soldCounts: null,
   soldAsked: false,
+  metaView: '',
+  metaCheckout: false,
 };
 
 let accountGen = 0;
@@ -250,6 +253,7 @@ function paint(opts = {}) {
     state.soldAsked = true;
     loadSoldCounts();
   }
+  noteCommerce();
   if (parseRoute(location.hash).name === 'account' && state.session && !state.accountLoaded && !state.accountLoading) {
     loadAccount();
   }
@@ -275,7 +279,7 @@ function shell() {
   const body = mainView();
   const reels = parseRoute(location.hash).name === 'reels';
   if (reels) return `${body}<div id="toast" class="toast" role="status" hidden></div>`;
-  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
+  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>${cookieBar()}`;
 }
 
 function topbar() {
@@ -1221,6 +1225,8 @@ async function placeOrder(form) {
         };
         saveThanks(thanks);
         state.payModal = !!payPopup(thanks);
+        const purchase = metaPurchase(body.to_pay_now, body.order_no);
+        if (purchase) trackMeta(purchase.event, purchase.params, purchase.eventID);
         setBasket([]);
         saveDraft({ ...state.draft, note: '', terms: false });
       }
@@ -1275,7 +1281,15 @@ function addCurrent() {
   if (count) count.textContent = n ? String(n) : '';
   const link = document.querySelector('.cartlink');
   if (link) link.setAttribute('aria-label', `Koszyk, ${n} szt.`);
-  if (result.added > 0) toast('Dodano.', { href: '#/koszyk', label: 'Do kasy' });
+  if (result.added > 0) {
+    trackMeta('AddToCart', {
+      content_ids: [String(product.code || '')],
+      content_type: 'product',
+      value: (Number(product.price) || 0) * result.added,
+      currency: 'PLN',
+    });
+    toast('Dodano.', { href: '#/koszyk', label: 'Do kasy' });
+  }
   else toast('W koszyku jest już cały dostępny stan.');
 }
 
@@ -1391,6 +1405,12 @@ function onClick(event) {
     const allowance = product ? allowanceFor(product, line.color) : undefined;
     if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
     else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'meta-yes' || act === 'meta-no') {
+    saveMetaChoice(act === 'meta-yes' ? 'yes' : 'no');
+    if (act === 'meta-yes') ensurePixel();
     paint({ keep: true });
     return;
   }
@@ -1598,6 +1618,82 @@ async function loadVariants() {
   paint({ keep: true });
 }
 
+function metaChoice() {
+  try { return localStorage.getItem(META_CHOICE_KEY) || ''; } catch { return ''; }
+}
+
+function saveMetaChoice(value) {
+  try { localStorage.setItem(META_CHOICE_KEY, value); } catch { /* the choice stays for this view only */ }
+}
+
+function cookieBar() {
+  if (!metaOn() || metaChoice()) return '';
+  return `<div class="cookiebar" role="dialog" aria-label="Ciasteczka">
+    <p>Możemy zapisać, które strony oglądasz, żeby mierzyć sklep.</p>
+    <div class="cookie-actions">
+      <button type="button" class="btn primary" data-act="meta-yes">Akceptuję</button>
+      <button type="button" class="btn ghost" data-act="meta-no">Odrzucam</button>
+    </div>
+  </div>`;
+}
+
+let pixelStarted = false;
+
+function ensurePixel() {
+  if (!metaOn() || metaChoice() !== 'yes' || pixelStarted) return;
+  pixelStarted = true;
+  if (!window.fbq) {
+    const queue = function () {
+      queue.callMethod ? queue.callMethod.apply(queue, arguments) : queue.queue.push(arguments);
+    };
+    queue.queue = [];
+    queue.loaded = true;
+    queue.version = '2.0';
+    window.fbq = queue;
+  }
+  window.fbq('init', String(META_PIXEL_ID).trim());
+  window.fbq('track', 'PageView');
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  document.head.appendChild(script);
+}
+
+function trackMeta(event, params, eventID) {
+  if (!metaOn() || metaChoice() !== 'yes') return;
+  ensurePixel();
+  const clean = metaPayload(event, params, eventID);
+  if (typeof window.fbq !== 'function') return;
+  if (clean.eventID) window.fbq('track', clean.event, clean.params, { eventID: clean.eventID });
+  else window.fbq('track', clean.event, clean.params);
+}
+
+function noteCommerce() {
+  if (!metaOn() || metaChoice() !== 'yes') return;
+  const route = parseRoute(location.hash);
+  if (route.name === 'product') {
+    const product = findProduct(route.code);
+    const code = String(product?.code || '');
+    if (code && state.metaView !== code) {
+      state.metaView = code;
+      trackMeta('ViewContent', { content_ids: [code], content_type: 'product' });
+    }
+  } else state.metaView = '';
+  if (route.name === 'checkout' && state.basket.length) {
+    if (!state.metaCheckout) {
+      state.metaCheckout = true;
+      const open = pricedLines().filter((line) => !colourGone(line));
+      const totals = previewTotals(open);
+      trackMeta('InitiateCheckout', {
+        content_ids: open.map((line) => String(line.code || '')).filter(Boolean),
+        content_type: 'product',
+        value: totals.total,
+        currency: 'PLN',
+      });
+    }
+  } else state.metaCheckout = false;
+}
+
 function start() {
   state.basket = sanitizeBasket(readJson(BASKET_KEY, []));
   const storedMine = readJson(ORDERS_KEY, []);
@@ -1607,6 +1703,7 @@ function start() {
   state.draft = storedDraft ? { ...emptyDraft(), ...storedDraft } : emptyDraft();
   state.thanks = loadThanks();
   try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
+  ensurePixel();
   const root = document.getElementById('app');
   root.addEventListener('load', (event) => {
     const img = event.target;

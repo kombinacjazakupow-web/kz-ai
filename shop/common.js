@@ -11,6 +11,8 @@ export const TRANSFER_LINE = 'Przelew: PL24 2910 0006 0000 0000 0571 2568 (Serge
 export const BLIK_COPY = '796 669 157';
 export const TRANSFER_COPY = 'PL24 2910 0006 0000 0000 0571 2568';
 export const FACEBOOK_LOGIN = false;
+export const META_PIXEL_ID = '';
+export const META_CHOICE_KEY = 'kombi-shop-meta';
 
 export const BASKET_KEY = 'kombi-shop-basket';
 export const DRAFT_KEY = 'kombi-shop-draft';
@@ -154,6 +156,26 @@ export function facebookClip(value) {
     || /^\/[^/]+\/videos\/\d+$/.test(path);
   if (!ok) return '';
   return `${url.origin}${url.pathname}${url.search}`;
+}
+
+export function metaOn(id = META_PIXEL_ID) {
+  return /^[0-9]{5,20}$/.test(String(id || '').trim());
+}
+
+export function metaPayload(event, params, eventID) {
+  const source = params && typeof params === 'object' ? params : {};
+  const clean = {};
+  if (Array.isArray(source.content_ids)) clean.content_ids = source.content_ids.map((item) => String(item));
+  if (source.content_type) clean.content_type = String(source.content_type);
+  if (source.value != null && Number.isFinite(Number(source.value))) clean.value = Number(source.value);
+  if (source.currency) clean.currency = String(source.currency);
+  return { event: String(event || ''), params: clean, eventID: eventID ? String(eventID) : '' };
+}
+
+export function metaPurchase(amount, orderNo) {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return null;
+  return metaPayload('Purchase', { value, currency: 'PLN' }, orderNo);
 }
 
 export function soldShopLine(count) {
