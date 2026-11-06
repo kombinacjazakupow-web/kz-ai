@@ -46,6 +46,25 @@ export function isSoldOut(product, variants) {
   return Number.isFinite(stock) && stock <= 0;
 }
 
+export function stockPhrase(stock) {
+  if (stock == null || stock === '') return '';
+  const n = Number(stock);
+  if (!Number.isFinite(n) || n < 0) return '';
+  const whole = Math.floor(n);
+  return whole > 20 ? 'dużo sztuk' : String(whole);
+}
+
+export function liveStockText(product, variants) {
+  const views = colorViews(product, variants);
+  if (views.length && views.every((view) => view.stock != null)) {
+    const total = views.reduce((sum, view) => sum + view.stock, 0);
+    const parts = views.map((view) => `${view.name}: ${stockPhrase(view.stock)}`);
+    return `Zostało: ${stockPhrase(total)}. ${parts.join('. ')}.`;
+  }
+  const phrase = stockPhrase(product?.stock);
+  return phrase ? `Zostało: ${phrase}.` : '';
+}
+
 export function freshBadge(product, variants) {
   if (isSoldOut(product, variants)) return 'WYPRZEDANE';
   const views = colorViews(product, variants);

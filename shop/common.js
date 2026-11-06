@@ -139,8 +139,31 @@ export function facebookReel(value) {
   return FACEBOOK_REEL.test(raw) ? raw : '';
 }
 
+export function facebookClip(value) {
+  const raw = String(value || '').trim();
+  if (facebookReel(raw)) return raw;
+  let url;
+  try { url = new URL(raw); } catch { return ''; }
+  if (url.protocol !== 'https:' || url.username || url.password) return '';
+  if (url.hostname !== 'www.facebook.com') return '';
+  const path = url.pathname.replace(/\/+$/, '') || '/';
+  const ok = path === '/watch'
+    || /^\/reel\/\d+$/.test(path)
+    || /^\/videos\/\d+$/.test(path)
+    || /^\/[^/]+\/videos\/\d+$/.test(path);
+  if (!ok) return '';
+  return `${url.origin}${url.pathname}${url.search}`;
+}
+
+export function soldShopLine(count) {
+  if (count == null || count === '') return '';
+  const n = Number(count);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  return `Sprzedane w sklepie: ${Math.floor(n)}`;
+}
+
 export function facebookPlayer(value, autoplay) {
-  const href = facebookReel(value);
+  const href = facebookReel(value) || facebookClip(value);
   if (!href) return '';
   const params = new URLSearchParams({ href, show_text: 'false' });
   if (autoplay) params.set('autoplay', 'true');

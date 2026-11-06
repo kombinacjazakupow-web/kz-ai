@@ -6,10 +6,10 @@ import {
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
-  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookPlayer,
+  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookClip, facebookPlayer, soldShopLine,
 } from '#common';
 import {
-  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
+  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, liveStockText, orderCatalog, roomForColor, stockForColor, variantError,
 } from '#variants';
 import { dropRail, dotPaint, newestDrop, visibleDots } from '#window';
 import { buyLabel } from '#buy';
@@ -70,6 +70,8 @@ const state = {
   losLine: { home: '', thanks: '' },
   checkoutKey: '',
   payModal: false,
+  soldCounts: null,
+  soldAsked: false,
 };
 
 let accountGen = 0;
@@ -244,6 +246,10 @@ function paint(opts = {}) {
   root.innerHTML = shell();
   afterPaint();
   window.scrollTo(0, y);
+  if (parseRoute(location.hash).name === 'product' && !state.soldAsked) {
+    state.soldAsked = true;
+    loadSoldCounts();
+  }
   if (parseRoute(location.hash).name === 'account' && state.session && !state.accountLoaded && !state.accountLoading) {
     loadAccount();
   }
@@ -434,6 +440,7 @@ function productMain(code) {
       ${nav}
     </div>
     ${dots}
+    ${liveSection(product)}
     <h1>${esc(product.title || 'Produkt')}</h1>
     <p class="price">${esc(formatZl(product.price))}</p>
     ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
@@ -441,6 +448,21 @@ function productMain(code) {
     ${buy}
     <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
   </main>`;
+}
+
+function liveSection(product) {
+  const stock = liveStockText(product, state.variants);
+  const sold = state.soldCounts ? soldShopLine(state.soldCounts[String(product.code || '')]) : '';
+  const reel = facebookReel(product.reel_url);
+  const clip = facebookClip(product.live_clip_url);
+  if (!stock && !sold && !reel && !clip) return '';
+  return `<section class="live-note" aria-labelledby="live-heading">
+    <h2 id="live-heading">Jak na live</h2>
+    ${stock ? `<p>${esc(stock)}</p>` : ''}
+    ${sold ? `<p>${esc(sold)}</p>` : ''}
+    ${reel ? `<p><a href="${esc(reel)}" target="_blank" rel="noopener noreferrer">Zobacz film i komentarze na Facebooku</a></p>` : ''}
+    ${clip ? `<div class="clip-slide" data-embed="${esc(clip)}"><button type="button" class="btn ghost block" data-act="clip-play">Fragment z live</button></div>` : ''}
+  </section>`;
 }
 
 function reelPoster(product, photo, reel) {
@@ -1375,6 +1397,10 @@ function onClick(event) {
     mountFacebook(target.closest('[data-embed]'), 'Rolka na Facebooku');
     return;
   }
+  if (act === 'clip-play') {
+    mountFacebook(target.closest('[data-embed]'), 'Fragment z live');
+    return;
+  }
   if (act === 'pay-close') {
     state.payModal = false;
     paint({ keep: true });
@@ -1509,6 +1535,27 @@ async function copyFrom(button) {
   button.dataset.label = previous === 'Skopiowano' || previous === 'Nie skopiowano' ? 'Kopiuj' : previous;
   button.textContent = ok ? 'Skopiowano' : 'Nie skopiowano';
   setTimeout(() => { button.textContent = button.dataset.label || 'Kopiuj'; }, 2000);
+}
+
+async function loadSoldCounts() {
+  try {
+    const { data, error } = await sb.rpc('shop_sold_counts');
+    if (error || !Array.isArray(data)) {
+      state.soldCounts = null;
+      return;
+    }
+    const map = {};
+    for (const row of data) {
+      const code = String(row?.code || '');
+      const sold = Number(row?.sold);
+      if (!code || !Number.isFinite(sold)) continue;
+      map[code] = Math.floor(sold);
+    }
+    state.soldCounts = map;
+    if (booted) paint({ keep: true });
+  } catch {
+    state.soldCounts = null;
+  }
 }
 
 async function loadProducts() {

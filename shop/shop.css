@@ -211,6 +211,11 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
 .reel-title { margin: 0; color: #fff; font-family: var(--serif); font-size: 28px; }
 .reel-bar .btn { min-height: 48px; }
 .product-page { padding-bottom: 96px; }
+.live-note { margin: 16px 0 8px; }
+.live-note h2 { margin: 0 0 8px; font-family: var(--serif); font-size: 28px; font-weight: 400; }
+.live-note a { display: inline-flex; align-items: center; min-height: 48px; }
+.clip-slide .btn { min-height: 48px; }
+.clip-slide iframe { display: block; width: 100%; aspect-ratio: 9 / 16; border: 0; border-radius: 12px; }
 .product-page .gallery, .product-page .hero-photo { max-height: 46vh; }
 .buybar {
   position: fixed;
