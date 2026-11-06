@@ -1,7 +1,7 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
-  DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
+  DELIVERY_LABEL, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, hangerSrc, sameHangerFilm, playbackHeld, photosAfterPoster, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket, FACEBOOK_LOGIN,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
@@ -114,7 +114,8 @@ function setBasket(lines) {
 
 function saveDraft(draft) {
   const remember = !!draft?.remember;
-  state.draft = { ...emptyDraft(), ...draft, remember };
+  const payment = draft?.payment === 'cod' ? '' : draft?.payment;
+  state.draft = { ...emptyDraft(), ...draft, payment, remember };
   if (remember) writeJson(DRAFT_KEY, state.draft);
   else {
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
@@ -665,9 +666,7 @@ function checkoutMain() {
       <p class="group-label">Płatność</p>
       ${choice('payment', 'blik', 'BLIK na telefon', draft.payment)}
       ${choice('payment', 'transfer', 'Przelew', draft.payment)}
-      ${choice('payment', 'cod', 'Pobranie — wpłacasz teraz tylko 28 zł, resztę kurierowi', draft.payment)}
       ${err.payment ? `<small class="field-error">${esc(err.payment)}</small>` : ''}
-      <div id="cod-note" class="note-box"${draft.payment === 'cod' ? '' : ' hidden'}>${esc(COD_NOTE)}</div>
       <label class="field" for="note"><span>Uwagi</span>
         <textarea id="note" name="note" maxlength="800">${esc(draft.note)}</textarea>
         ${err.note ? `<small class="field-error">${esc(err.note)}</small>` : ''}
@@ -1312,11 +1311,8 @@ function syncChoices() {
     el.classList.toggle('on', !!input?.checked);
   });
   const delivery = document.querySelector('input[name="delivery"]:checked')?.value || '';
-  const payment = document.querySelector('input[name="payment"]:checked')?.value || '';
   const point = document.getElementById('point-wrap');
-  const cod = document.getElementById('cod-note');
   if (point) point.hidden = delivery !== 'dpd_point';
-  if (cod) cod.hidden = payment !== 'cod';
 }
 
 function readCheckout(form) {
@@ -1900,6 +1896,7 @@ function start() {
   state.mine = storedRows.slice().reverse().reduce((list, row) => rememberOrder(list, row), []);
   const storedDraft = storedBuyer(readJson(DRAFT_KEY, {}));
   state.draft = storedDraft ? { ...emptyDraft(), ...storedDraft } : emptyDraft();
+  if (state.draft.payment === 'cod') state.draft.payment = '';
   state.thanks = loadThanks();
   try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
   ensurePixel();
@@ -1997,7 +1994,7 @@ if (typeof window !== 'undefined') {
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=17', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=18', { scope: './' }).catch(() => {});
     });
   }
 }

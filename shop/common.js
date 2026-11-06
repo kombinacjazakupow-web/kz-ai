@@ -4,7 +4,6 @@ export const SUPABASE_KEY = 'sb_publishable_pIiSGwIiJJmkNsvlZyniAw_6CQ1FlpF';
 
 export const DELIVERY_FEE = 25;
 export const DELIVERY_LABEL = 'Dostawa DPD 25 zł';
-export const COD_NOTE = 'Pobranie — wpłacasz teraz tylko 28 zł, resztę kurierowi.';
 export const MESSENGER_LINE = 'Dołącz potwierdzenie powyżej (najszybciej). Pytania: WhatsApp +48 792 402 881.';
 export const BLIK_LINE = 'BLIK na telefon: 796 669 157 (Fikrie Ali)';
 export const TRANSFER_LINE = 'Przelew: PL24 2910 0006 0000 0000 0571 2568 (Sergen Kushdan)';
@@ -488,7 +487,7 @@ export function validateCheckout(form, lines) {
   if (form?.delivery === 'dpd_point' && String(form?.point_code || '').trim().length < 3) {
     errors.point_code = 'Podaj kod punktu albo automatu DPD.';
   }
-  if (!['blik', 'transfer', 'cod'].includes(form?.payment)) errors.payment = 'Wybierz sposób płatności.';
+  if (!['blik', 'transfer'].includes(form?.payment)) errors.payment = 'Wybierz sposób płatności.';
   if (note.length > 800) errors.note = 'Skróć uwagi — maksymalnie 800 znaków.';
   if (!form?.terms) errors.terms = 'Zaznacz akceptację regulaminu.';
   if (!Array.isArray(lines) || !lines.length) errors.items = 'Koszyk jest pusty.';
@@ -542,7 +541,7 @@ export function mapOrderError(code) {
     phone: 'Sprawdź numer telefonu — potrzebujemy 9 cyfr.',
     postcode: 'Sprawdź kod pocztowy. Poprawny format to 00-000.',
     address: 'Sprawdź imię i nazwisko, ulicę i miasto.',
-    choice: 'Wybierz dostawę i płatność jeszcze raz.',
+    choice: 'Wybierz BLIK albo przelew',
     point: 'Podaj kod punktu albo automatu DPD.',
     items: 'Koszyk jest pusty albo ma niepoprawne pozycje.',
     too_many: 'Za dużo sztuk w jednym zamówieniu. Zmniejsz ilość.',
