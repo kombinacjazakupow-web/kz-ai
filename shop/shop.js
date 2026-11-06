@@ -6,7 +6,7 @@ import {
   esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
-  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
+  mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup,
 } from '#common';
 import {
   cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
@@ -69,6 +69,7 @@ const state = {
   promoDismissed: false,
   losLine: { home: '', thanks: '' },
   checkoutKey: '',
+  payModal: false,
 };
 
 let accountGen = 0;
@@ -692,7 +693,23 @@ function thanksMain(order) {
     ${losCard('thanks')}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
-  </main>`;
+  </main>${state.payModal ? payModalHtml(order) : ''}`;
+}
+
+function payModalHtml(order) {
+  const popup = payPopup(order);
+  if (!popup) return '';
+  const row = (text, copy, label) => `<div class="copyline"><p>${esc(text)}</p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(copy)}" aria-label="${esc(label)}">Kopiuj</button></div>`;
+  return `<div class="pay-shade" id="pay-modal" role="dialog" aria-modal="true" aria-labelledby="pay-title">
+    <div class="pay-card">
+      <h2 id="pay-title">${esc(popup.title)}</h2>
+      ${row(`Do zapłaty teraz: ${popup.amountText}`, popup.copies.amount, 'Kopiuj kwotę')}
+      ${row(popup.blik, popup.copies.blik, 'Kopiuj numer BLIK')}
+      ${row(popup.transfer, popup.copies.transfer, 'Kopiuj numer konta')}
+      ${row(popup.titleLine, popup.copies.orderNo, 'Kopiuj numer zamówienia')}
+      <button type="button" class="btn primary block" data-act="pay-close">Rozumiem</button>
+    </div>
+  </div>`;
 }
 
 function proofBox(orderNo, phone) {
@@ -980,6 +997,7 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
+  focusPayModal();
   watchReels();
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
@@ -995,6 +1013,34 @@ function afterPaint() {
   };
   gallery.addEventListener('scroll', mark, { passive: true });
   mark();
+}
+
+function focusPayModal() {
+  const dialog = document.getElementById('pay-modal');
+  if (!dialog) return;
+  document.querySelectorAll('#app > :not(#pay-modal)').forEach((el) => { el.inert = true; });
+  const items = () => [...dialog.querySelectorAll('button')];
+  items()[items().length - 1]?.focus();
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      state.payModal = false;
+      paint({ keep: true });
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const buttons = items();
+    if (!buttons.length) return;
+    const first = buttons[0];
+    const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
 }
 
 function watchReels() {
@@ -1112,7 +1158,7 @@ async function placeOrder(form) {
         failed = ORDER_UNSURE;
       } else {
         state.checkoutKey = '';
-        saveThanks({
+        const thanks = {
           order_no: body.order_no,
           products_total: body.products_total,
           delivery_fee: body.delivery_fee,
@@ -1120,7 +1166,9 @@ async function placeOrder(form) {
           cod_amount: body.cod_amount,
           payment: payload.payment,
           phone: payload.phone,
-        });
+        };
+        saveThanks(thanks);
+        state.payModal = !!payPopup(thanks);
         setBasket([]);
         saveDraft({ ...state.draft, note: '', terms: false });
       }
@@ -1291,6 +1339,11 @@ function onClick(event) {
     const allowance = product ? allowanceFor(product, line.color) : undefined;
     if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
     else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'pay-close') {
+    state.payModal = false;
     paint({ keep: true });
     return;
   }

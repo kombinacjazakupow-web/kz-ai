@@ -110,6 +110,28 @@ export function slidePlan(hasFilm, photoCount) {
   return { total, controls: total > 1 };
 }
 
+export function payPopup(order) {
+  const payment = String(order?.payment || '');
+  if (payment !== 'blik' && payment !== 'transfer' && payment !== 'cod') return null;
+  const amount = Number(order?.to_pay_now);
+  if (!Number.isFinite(amount)) return null;
+  const orderNo = String(order?.order_no ?? '');
+  const amountText = formatZl(amount);
+  return {
+    title: 'Zrób przelew ze swojego banku',
+    amountText,
+    blik: BLIK_LINE,
+    transfer: TRANSFER_LINE,
+    titleLine: `W tytule wpisz numer zamówienia: ${orderNo}`,
+    copies: {
+      amount: amountText,
+      blik: BLIK_COPY,
+      transfer: TRANSFER_COPY,
+      orderNo,
+    },
+  };
+}
+
 export function proofKind(file) {
   const name = String(file?.name || '').toLowerCase();
   const type = String(file?.type || '').toLowerCase();
