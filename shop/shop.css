@@ -202,15 +202,14 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
 .hanger-pair.solo { grid-template-columns: 1fr; }
 .hanger-panel { min-width: 0; }
 .hanger-panel h2 { margin: 0 0 2px; font-size: 13px; font-weight: 500; line-height: 1.15; }
-.hanger-photo, .hanger-sound, .hanger-video {
-  background: var(--canvas-soft);
-}
+.hanger-sound, .hanger-video { background: var(--canvas-soft); }
 .hanger-photo {
   position: relative;
   width: 100%;
   aspect-ratio: 9 / 16;
   overflow: hidden;
   border-radius: 12px;
+  background: #cdc8c3;
 }
 .hanger-photo img, .hanger-photo .ph {
   position: absolute;
@@ -219,6 +218,7 @@ main.reels { height: 100dvh; margin: 0; padding: 0; overflow-y: auto; scroll-sna
   width: 100%;
   height: 100%;
   object-fit: contain;
+  background: #cdc8c3;
 }
 .hanger-sound { display: block; width: 100%; padding: 0; border: 0; border-radius: 12px; cursor: pointer; }
 .hanger-video { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: contain; border-radius: 12px; }
