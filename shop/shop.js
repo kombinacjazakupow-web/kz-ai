@@ -7,21 +7,21 @@ import {
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
-} from './common.js';
+} from '#common';
 import {
   cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
-} from './variants.js';
-import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
-import { buyLabel } from './buy.js';
-import { buyerLine, savedBuyerOk, storedBuyer } from './checkout.js';
-import { LOS_HOME_KEY, keepSlogan, openHomeSurprise } from './los.js';
-import { reelItems, reelOnScreen } from './rolki.js';
-import { INSTALL_HIDE_KEY, installKind } from './install.js';
-import { INTEREST_KEY, SOON, toggleInterest } from './soon.js';
+} from '#variants';
+import { dropRail, dotPaint, newestDrop, visibleDots } from '#window';
+import { buyLabel } from '#buy';
+import { buyerLine, savedBuyerOk, storedBuyer } from '#checkout';
+import { LOS_HOME_KEY, keepSlogan, openHomeSurprise } from '#los';
+import { reelItems, reelOnScreen } from '#rolki';
+import { INSTALL_HIDE_KEY, installKind } from '#install';
+import { INTEREST_KEY, SOON, toggleInterest } from '#soon';
 import {
   AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
   accountEmptyText, claimCode, claimMessage, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct, OTHER_BROWSER_NOTE, SERVICE_LINE, shouldShowPromo,
-} from './account.js';
+} from '#account';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: {
@@ -1559,7 +1559,7 @@ if (typeof window !== 'undefined') {
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=12', { scope: './' }).catch(() => {});
     });
   }
 }

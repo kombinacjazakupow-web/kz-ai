@@ -1,4 +1,4 @@
-import { phoneOk, postcodeOk } from './common.js';
+import { phoneOk, postcodeOk } from '#common';
 
 const BUYER_KEYS = ['name', 'phone', 'street', 'postcode', 'city'];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

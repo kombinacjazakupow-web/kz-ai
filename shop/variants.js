@@ -1,4 +1,4 @@
-import { splitList } from './common.js';
+import { splitList } from '#common';
 
 export const COLOR_GONE = 'Ten kolor właśnie się skończył – wybierz inny';
 export const COLOR_SOLD = 'Ktoś był szybszy – ten kolor jest już wyprzedany';

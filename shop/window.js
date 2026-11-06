@@ -1,4 +1,4 @@
-import { isSoldOut } from './variants.js';
+import { isSoldOut } from '#variants';
 
 const DOTS = {
   czarny: '#1c1c1c',

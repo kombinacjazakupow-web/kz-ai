@@ -1,5 +1,5 @@
 // Client account helpers. No network calls here, so the status rules can be tested alone.
-import { DELIVERY_FEE } from './common.js';
+import { DELIVERY_FEE } from '#common';
 
 export const PROMO_CODE = 'PACZKA-5';
 export const PROMO_SEEN_KEY = 'kombi-shop-promo-paczka-5';
