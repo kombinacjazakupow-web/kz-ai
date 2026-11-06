@@ -15,6 +15,22 @@
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="shop.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "#common": "./common.js?v=12",
+      "#variants": "./variants.js?v=12",
+      "#window": "./window.js?v=12",
+      "#buy": "./buy.js?v=12",
+      "#checkout": "./checkout.js?v=12",
+      "#los": "./los.js?v=12",
+      "#rolki": "./rolki.js?v=12",
+      "#install": "./install.js?v=12",
+      "#soon": "./soon.js?v=12",
+      "#account": "./account.js?v=12"
+    }
+  }
+  </script>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="preconnect" href="https://ghhatjkcgilnruluhxyr.supabase.co" crossorigin>
 </head>
@@ -24,7 +40,7 @@
   </div>
   <noscript><p class="noscript">Włącz JavaScript, żeby otworzyć sklep.</p></noscript>
   <script type="module">
-    import('./shop.js').catch(() => {
+    import('./shop.js?v=12').catch(() => {
       const el = document.getElementById('app');
       if (el) el.textContent = 'Nie udało się załadować sklepu. Sprawdź połączenie i odśwież.';
     });

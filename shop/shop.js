@@ -3,15 +3,37 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, photoUrl, videoSrc, splitList, settleOption, chooseOption, parseRoute, stockBadge, sanitizeBasket,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
-  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder,
+  clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk,
-} from './common.js';
+} from '#common';
+import {
+  cleanVariants, colorBasket, colorViews, colorsShareStock, freshBadge, isSoldOut, lineStock, orderCatalog, roomForColor, stockForColor, variantError,
+} from '#variants';
+import { dropRail, dotPaint, newestDrop, visibleDots } from '#window';
+import { buyLabel } from '#buy';
+import { buyerLine, savedBuyerOk, storedBuyer } from '#checkout';
+import { LOS_HOME_KEY, keepSlogan, openHomeSurprise } from '#los';
+import { reelItems, reelOnScreen } from '#rolki';
+import { INSTALL_HIDE_KEY, installKind } from '#install';
+import { INTEREST_KEY, SOON, toggleInterest } from '#soon';
+import {
+  AUTH_STORAGE_KEY, PROMO_SEEN_KEY,
+  accountEmptyText, claimCode, claimMessage, emailOk, ignoreSameSignIn, mergeAccountOrders, orderSourceLabel, promoProduct, OTHER_BROWSER_NOTE, SERVICE_LINE, shouldShowPromo,
+} from '#account';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  auth: {
+    flowType: 'pkce',
+    detectSessionInUrl: true,
+    persistSession: true,
+    autoRefreshToken: true,
+    storageKey: AUTH_STORAGE_KEY,
+  },
 });
+
+const returnFromEmail = /(?:^|[?&])(code|error|error_description)=/.test(location.search);
 
 const state = {
   products: [],
@@ -32,12 +54,30 @@ const state = {
   proofBusy: '',
   installReady: false,
   installEvent: null,
+  variants: [],
+  session: null,
+  accountLoading: false,
+  accountLoaded: false,
+  accountLinks: [],
+  accountOrders: [],
+  accountNote: '',
+  accountFailed: false,
+  accountDraft: { email: '', phone: '', orderNo: '' },
+  accountBusy: false,
+  magicSent: false,
+  promoOpen: false,
+  promoDismissed: false,
+  losLine: { home: '', thanks: '' },
+  checkoutKey: '',
 };
+
+let accountGen = 0;
+let booted = false;
 
 function emptyDraft() {
   return {
     name: '', phone: '', email: '', street: '', postcode: '', city: '',
-    delivery: '', point_code: '', payment: '', note: '', terms: false,
+    delivery: '', point_code: '', payment: '', note: '', terms: false, remember: false,
   };
 }
 
@@ -61,8 +101,12 @@ function setBasket(lines) {
 }
 
 function saveDraft(draft) {
-  state.draft = { ...emptyDraft(), ...draft };
-  writeJson(DRAFT_KEY, state.draft);
+  const remember = !!draft?.remember;
+  state.draft = { ...emptyDraft(), ...draft, remember };
+  if (remember) writeJson(DRAFT_KEY, state.draft);
+  else {
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
+  }
 }
 
 function saveThanks(order) {
@@ -110,12 +154,23 @@ function letter(title) {
   return ch || '·';
 }
 
-function thumbHtml(path, alt, eager) {
-  const url = photoUrl(path);
-  if (!url) return `<span class="ph" aria-hidden="true">${esc(letter(alt))}</span>`;
+function thumbHtml(path, alt, eager, width) {
+  const full = photoSrc(path, width || (eager ? 800 : 400));
+  const tiny = photoSrc(path, 32);
+  if (!full) return `<span class="ph" aria-hidden="true">${esc(letter(alt))}</span>`;
   const loading = eager ? 'eager' : 'lazy';
   const priority = eager ? ' fetchpriority="high"' : '';
-  return `<img src="${esc(url)}" alt="${esc(alt)}" loading="${loading}" decoding="async"${priority} referrerpolicy="no-referrer">`;
+  return `<span class="blurup"${tiny ? ` style="background-image:url('${esc(tiny)}')"` : ''}>
+    <img src="${esc(full)}" alt="${esc(alt)}" loading="${loading}" decoding="async"${priority} data-fallback="${esc(photoUrl(path))}" referrerpolicy="no-referrer">
+  </span>`;
+}
+
+function colourGone(line) {
+  const product = productById(line?.product_id);
+  if (!product || !line?.color) return false;
+  const views = colorViews(product, state.variants);
+  if (!views.length || views.some((view) => view.stock == null)) return false;
+  return !views.some((view) => view.name === String(line.color) && view.stock > 0);
 }
 
 function pricedLines() {
@@ -134,37 +189,46 @@ function pricedLines() {
 function visibleProducts() {
   const q = state.query.trim().toLocaleLowerCase('pl');
   const list = state.products.filter((item) => item.active !== false);
-  if (!q) return list;
-  return list.filter((item) => {
+  const matched = !q ? list : list.filter((item) => {
     const hay = [item.title, item.code, item.description, item.sizes, item.colors]
       .map((part) => String(part || '').toLocaleLowerCase('pl'))
       .join(' ');
     return hay.includes(q);
   });
+  return orderCatalog(matched, state.variants);
 }
 
-function stockOf(product) {
-  const n = Number(product?.stock);
-  return Number.isFinite(n) ? n : null;
+function stockOf(product, color) {
+  return stockForColor(product, state.variants, color ?? state.pick.color);
 }
 
-function heldQty(productId) {
-  return state.basket.reduce((sum, line) => (
-    String(line.product_id) === String(productId) ? sum + (Number(line.qty) || 0) : sum
-  ), 0);
+function addRoom(product, color = state.pick.color) {
+  const held = colorBasket(state.basket, product?.id, color);
+  const used = colorsShareStock(product, state.variants) ? held.same + held.other : held.same;
+  return roomForColor(stockOf(product, color), used);
 }
 
-function addRoom(product) {
-  const stock = stockOf(product);
-  if (stock == null) return 99;
-  return Math.max(0, Math.min(99, Math.floor(stock)) - heldQty(product?.id));
+function allowanceFor(product, color) {
+  const held = colorBasket(state.basket, product?.id, color);
+  const other = colorsShareStock(product, state.variants) ? 0 : held.other;
+  return lineStock(stockOf(product, color), other);
 }
 
-function toast(msg) {
+function toast(msg, action) {
   const el = document.getElementById('toast');
   if (!el) return;
   el.hidden = false;
-  el.textContent = msg;
+  el.replaceChildren(document.createTextNode(msg));
+  if (action?.href && action?.label) {
+    const link = document.createElement('a');
+    link.href = action.href;
+    link.textContent = action.label;
+    el.append(document.createTextNode(' '));
+    el.append(link);
+  }
+  el.classList.remove('bounce');
+  void el.offsetWidth;
+  el.classList.add('bounce');
   clearTimeout(toast._t);
   toast._t = setTimeout(() => { el.hidden = true; }, 2800);
 }
@@ -172,11 +236,16 @@ function toast(msg) {
 function paint(opts = {}) {
   const root = document.getElementById('app');
   if (!root) return;
+  if (parseRoute(location.hash).name !== 'catalog') state.losHold = false;
   const y = opts.keep ? window.scrollY : 0;
+  syncPromo();
   document.title = pageTitle();
   root.innerHTML = shell();
   afterPaint();
   window.scrollTo(0, y);
+  if (parseRoute(location.hash).name === 'account' && state.session && !state.accountLoaded && !state.accountLoading) {
+    loadAccount();
+  }
 }
 
 function pageTitle() {
@@ -190,12 +259,16 @@ function pageTitle() {
     return product ? `${product.title} · KOMBI Sklep` : 'Produkt · KOMBI Sklep';
   }
   if (route.name === 'orders') return 'Moje zamówienia · KOMBI Sklep';
+  if (route.name === 'account') return state.session ? 'Twoje zamówienia · KOMBI Sklep' : 'Moje konto · KOMBI Sklep';
+  if (route.name === 'reels') return 'Rolki · KOMBI Sklep';
   return 'KOMBI Sklep';
 }
 
 function shell() {
   const body = mainView();
-  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
+  const reels = parseRoute(location.hash).name === 'reels';
+  if (reels) return `${body}<div id="toast" class="toast" role="status" hidden></div>`;
+  return `${topbar()}<p class="launch">${esc(LAUNCH_BANNER)}</p>${promoHtml()}${body}${footer()}<div id="toast" class="toast" role="status" hidden></div>`;
 }
 
 function topbar() {
@@ -203,6 +276,7 @@ function topbar() {
   return `<header class="top">
     <a class="mark" href="#/">KS</a>
     <div class="top-title"><b>KOMBI</b><small>Sklep</small></div>
+    <a class="accountlink" href="#/konto">Moje konto</a>
     <a class="cartlink" href="#/koszyk" aria-label="Koszyk, ${n} szt.">Koszyk <span id="cart-count">${n ? esc(String(n)) : ''}</span></a>
   </header>`;
 }
@@ -210,12 +284,12 @@ function topbar() {
 function footer() {
   return `<footer class="footer">
     <button type="button" class="install" id="install" data-act="install"${state.installReady ? '' : ' hidden'}>Zainstaluj aplikację</button>
+    <a href="#/rolki">Rolki</a>
     <a href="#/moje">Moje zamówienia</a>
     <a href="regulamin.html">Regulamin</a>
     <a href="prywatnosc.html">Polityka prywatności</a>
     <a href="zwroty.html">Zwroty i reklamacje</a>
     <button type="button" data-act="reload">Odśwież</button>
-    <a href="admin.html">Panel</a>
   </footer>`;
 }
 
@@ -229,18 +303,59 @@ function mainView() {
   if (route.name === 'basket') return basketMain();
   if (route.name === 'checkout') return checkoutMain();
   if (route.name === 'orders') return ordersMain();
+  if (route.name === 'account') return accountMain();
+  if (route.name === 'reels') return reelsMain();
   return catalogMain();
 }
 
 function catalogMain() {
   return `<main>
-    <h1>Produkty</h1>
-    <button type="button" class="btn luck" data-act="luck">${esc(LUCKY_LABEL)}</button>
-    <p id="slogan" class="slogan" hidden></p>
+    ${heroHtml()}
+    ${railHtml()}
+    ${installCard()}
+    <h2 id="kolekcja">Kolekcja</h2>
+    ${homeSurpriseHtml()}
     <input id="q" class="search" type="search" enterkeyhint="search" placeholder="Szukaj" value="${esc(state.query)}" aria-label="Szukaj produktu" autocomplete="off">
     <p id="result-note" class="hint">${esc(resultNoteText())}</p>
     <div id="grid" class="grid">${gridHtml()}</div>
+    ${soonHtml()}
   </main>`;
+}
+
+function heroHtml() {
+  const product = newestDrop(state.products, state.variants);
+  if (!product) return '';
+  const film = videoSrc(product.video_url);
+  const media = film
+    ? `<video class="hero-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+    : `<div class="hero-photo">${thumbHtml(photoList(product)[0], product.title || 'Nowość', true, 800)}</div>`;
+  return `<section class="hero">
+    ${media}
+    <p class="eyebrow">NOWOŚCI JUŻ SĄ</p>
+    <h1>${esc(product.title || 'Nowości')}</h1>
+    <p class="price">${esc(formatZl(product.price))}</p>
+    <button type="button" class="btn primary" data-act="kolekcja">Zobacz kolekcję</button>
+  </section>`;
+}
+
+function railHtml() {
+  const list = dropRail(state.products, state.variants);
+  if (!list.length) return '';
+  const cards = list.map((product) => {
+    const code = encodeURIComponent(String(product.code || ''));
+    return `<a class="rail-card" href="#/p/${code}">
+      <span class="thumb">${thumbHtml(photoList(product)[0], product.title || 'Produkt', false, 400)}</span>
+      <span class="card-title">${esc(product.title || 'Produkt')}</span>
+      <span class="price">${esc(formatZl(product.price))}</span>
+    </a>`;
+  }).join('');
+  return `<section class="rail" aria-label="Nowość dnia"><h2>Nowość dnia</h2><div class="rail-row">${cards}</div></section>`;
+}
+
+function dotHtml(product) {
+  const dots = visibleDots(colorViews(product, state.variants));
+  if (!dots.length) return '';
+  return `<span class="dots-row">${dots.map((view) => `<i class="dot" style="background:${esc(dotPaint(view.name))}" title="${esc(view.name)}"></i>`).join('')}</span>`;
 }
 
 function resultNoteText() {
@@ -254,8 +369,8 @@ function gridHtml() {
   const list = visibleProducts();
   if (!list.length) return '';
   return list.map((product, index) => {
-    const badge = stockBadge(product.stock);
-    const sold = badge === 'Wyprzedane';
+    const badge = freshBadge(product, state.variants);
+    const sold = isSoldOut(product, state.variants);
     const badgeHtml = badge
       ? `<span class="badge${sold ? ' sold' : ''}">${esc(badge)}</span>`
       : '';
@@ -263,6 +378,7 @@ function gridHtml() {
     return `<a class="card${sold ? ' sold' : ''}" href="#/p/${code}">
       <span class="thumb">${thumbHtml(photoList(product)[0], product.title || 'Produkt', index < 2)}${badgeHtml}</span>
       <span class="card-title">${esc(product.title || 'Produkt')}</span>
+      ${dotHtml(product)}
       <span class="price">${esc(formatZl(product.price))}</span>
     </a>`;
   }).join('');
@@ -275,42 +391,40 @@ function productMain(code) {
   }
   syncPick(product);
   const photos = photoList(product);
-  const slides = photos.length
-    ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true)).join('')
-    : `<span class="ph">${esc(letter(product.title))}</span>`;
-  const nav = photos.length > 1
+  const film = videoSrc(product.video_url);
+  const filmSlide = film
+    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
+    : '';
+  const slides = (filmSlide + (photos.length
+    ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
+    : '')) || `<span class="ph">${esc(letter(product.title))}</span>`;
+  const plan = slidePlan(Boolean(film), photos.length);
+  const labels = [...(film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
+  const nav = plan.controls
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
     : '';
-  const dots = photos.length > 1
-    ? `<div class="dots" id="dots">${photos.map((_, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="Zdjęcie ${i + 1}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
+  const dots = plan.controls
+    ? `<div class="dots" id="dots">${labels.map((label, i) => `<button type="button" data-act="dot" data-idx="${i}" aria-label="${label}"${i === 0 ? ' class="on"' : ''}></button>`).join('')}</div><p id="gal-live" class="sr" aria-live="polite"></p>`
     : '';
-  const badge = stockBadge(product.stock);
-  const sold = badge === 'Wyprzedane';
+  const badge = freshBadge(product, state.variants);
+  const sold = isSoldOut(product, state.variants);
   const sizes = splitList(product.sizes);
-  const colors = splitList(product.colors);
   const left = addRoom(product);
   if (left > 0 && state.pick.qty > left) state.pick.qty = left;
   const max = Math.max(left, 1);
+  const heldHere = !sold && left < 1;
   const buy = sold
-    ? '<p class="badge sold" style="position:static;display:inline-block">Wyprzedane</p>'
-    : left < 1
-    ? '<p>W koszyku jest już cały dostępny stan.</p>'
-    : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${chips('color', 'Kolor', colors, state.pick.color)}
-      <div class="stepper" aria-label="Ilość">
+    ? '<p class="badge sold" style="position:static;display:inline-block">WYPRZEDANE</p>'
+    : `${chips('size', 'Rozmiar', sizes, state.pick.size)}${colorChips(product)}
+      ${heldHere ? '<p>W koszyku jest już cały dostępny stan.</p>' : `<div class="stepper" aria-label="Ilość">
         <button type="button" data-act="pqty" data-dir="-1" aria-label="Mniej" ${state.pick.qty <= 1 ? 'disabled' : ''}>−</button>
         <span id="pqty">${esc(String(state.pick.qty))}</span>
         <button type="button" data-act="pqty" data-dir="1" aria-label="Więcej" ${state.pick.qty >= max ? 'disabled' : ''}>+</button>
-      </div>
-      <button type="button" class="btn primary block" data-act="add">Dodaj do koszyka</button>`;
+      </div>`}`;
   const desc = String(product.description || '').trim();
-  const film = videoSrc(product.video_url);
-  const video = film
-    ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
-    : '';
-  return `<main>
+  return `<main class="product-page">
     <p><a class="back" href="#/">← Sklep</a></p>
-    ${video}
     <div class="gal-wrap">
       <div class="gallery" id="gallery" tabindex="0" aria-label="Zdjęcia produktu">${slides}</div>
       ${nav}
@@ -321,7 +435,22 @@ function productMain(code) {
     ${badge && !sold ? `<p><span class="badge" style="position:static">${esc(badge)}</span></p>` : ''}
     ${desc ? `<p class="desc">${esc(desc)}</p>` : ''}
     ${buy}
+    <div class="buybar"><button type="button" class="btn primary block" data-act="add" ${sold || heldHere ? 'disabled' : ''}>${esc(buyLabel(formatZl(product.price), sold))}</button></div>
   </main>`;
+}
+
+function colorChips(product) {
+  const views = colorViews(product, state.variants);
+  if (!views.length) return '';
+  const buttons = views.map((view) => {
+    const gone = view.stock === 0;
+    const on = !gone && view.name === state.pick.color;
+    if (gone) {
+      return `<button type="button" class="chip gone" disabled aria-pressed="false"><s>${esc(view.name)}</s> wyprzedane</button>`;
+    }
+    return `<button type="button" class="chip${on ? ' on' : ''}" data-act="pick" data-kind="color" data-val="${esc(view.name)}" aria-pressed="${on ? 'true' : 'false'}">${esc(view.name)}</button>`;
+  }).join('');
+  return `<fieldset class="chips"><legend>Kolor</legend><div class="chip-row">${buttons}</div></fieldset>`;
 }
 
 function chips(kind, label, options, selected) {
@@ -338,24 +467,26 @@ function basketMain() {
     return `<main class="center"><h1>Koszyk</h1><p>Koszyk jest pusty.</p><p><a class="btn primary" href="#/">Zobacz produkty</a></p></main>`;
   }
   const lines = pricedLines();
-  const totals = previewTotals(lines);
+  const open = lines.filter((line) => !colourGone(line));
+  const totals = previewTotals(open);
   const rows = lines.map((line) => {
     const meta = [line.size, line.color].filter(Boolean).join(' · ');
+    const gone = colourGone(line);
     const product = productById(line.product_id);
-    const stock = product ? stockOf(product) : null;
+    const stock = product ? stockOf(product, line.color) : null;
     const cap = stock == null ? 99 : Math.max(0, stock);
     return `<article class="line">
       <div class="thumb">${thumbHtml(line.photo, line.title, false)}</div>
       <div>
         <h2>${esc(line.title)}</h2>
         ${meta ? `<p class="muted">${esc(meta)}</p>` : ''}
-        <p class="price">${esc(formatZl(line.price))} · ${esc(formatZl(line.price * line.qty))}</p>
+        ${gone ? '<p class="badge sold" style="position:static">Ten kolor jest wyprzedany</p>' : `<p class="price">${esc(formatZl(line.price))} · ${esc(formatZl(line.price * line.qty))}</p>`}
         <div class="line-actions">
-          <div class="stepper">
+          ${gone ? '' : `<div class="stepper">
             <button type="button" data-act="lqty" data-key="${esc(lineKey(line))}" data-dir="-1" aria-label="Mniej">−</button>
             <span>${esc(String(line.qty))}</span>
             <button type="button" data-act="lqty" data-key="${esc(lineKey(line))}" data-dir="1" aria-label="Więcej" ${line.qty >= cap ? 'disabled' : ''}>+</button>
-          </div>
+          </div>`}
           <button type="button" class="btn ghost" data-act="drop" data-key="${esc(lineKey(line))}">Usuń</button>
         </div>
       </div>
@@ -382,11 +513,13 @@ function checkoutMain() {
   const draft = state.draft;
   const err = state.fieldErrors;
   const lines = pricedLines();
-  const totals = previewTotals(lines);
+  const totals = previewTotals(lines.filter((line) => !colourGone(line)));
   const summary = lines.map((line) => {
     const meta = [line.size, line.color].filter(Boolean).join(' · ');
-    const problem = state.problemCode && line.code === state.problemCode;
-    return `<p class="${problem ? 'problem' : ''}">${esc(line.title)}${meta ? ` · ${esc(meta)}` : ''} × ${esc(String(line.qty))} — ${esc(formatZl((Number(line.price) || 0) * line.qty))}${problem ? ` — ${esc('Ten produkt właśnie się wyprzedał.')}` : ''}</p>`;
+    const gone = colourGone(line);
+    const problem = gone || (state.problemCode && line.code === state.problemCode);
+    const note = gone ? ' — Ten kolor jest wyprzedany' : (problem ? ' — Ten produkt właśnie się wyprzedał.' : '');
+    return `<p class="${problem ? 'problem' : ''}">${esc(line.title)}${meta ? ` · ${esc(meta)}` : ''} × ${esc(String(line.qty))} — ${esc(formatZl((Number(line.price) || 0) * line.qty))}${esc(note)}</p>`;
   }).join('');
   const alert = state.formError || err.items || '';
   return `<main>
@@ -401,12 +534,11 @@ function checkoutMain() {
     </div>
     <p class="hint">To jest podgląd. Kwotę do zapłaty potwierdza sklep przy zamówieniu.</p>
     <form id="checkout" novalidate>
-      ${field('name', 'Imię i nazwisko', draft.name, 'text', err.name, 'autocomplete="name"')}
-      ${field('phone', 'Telefon', draft.phone, 'tel', err.phone, 'autocomplete="tel" inputmode="tel"')}
-      ${field('email', 'E-mail (nieobowiązkowy)', draft.email, 'email', err.email, 'autocomplete="email" inputmode="email"')}
-      ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
-      ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
-      ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}
+      ${buyerFields(draft, err)}
+      <label class="check">
+        <input id="remember" name="remember" type="checkbox"${draft.remember ? ' checked' : ''}>
+        <span>Zapamiętaj imię, telefon i adres na tym telefonie</span>
+      </label>
       <p class="group-label">Dostawa</p>
       ${choice('delivery', 'dpd_home', 'Kurier DPD pod drzwi', draft.delivery)}
       ${choice('delivery', 'dpd_point', 'Punkt lub automat DPD', draft.delivery)}
@@ -434,6 +566,105 @@ function checkoutMain() {
   </main>`;
 }
 
+function buyerFields(draft, err) {
+  if (savedBuyerOk(draft) && draft.remember && !state.editBuyer) {
+    const hidden = ['name', 'phone', 'email', 'street', 'postcode', 'city']
+      .map((key) => `<input type="hidden" name="${key}" value="${esc(draft[key] || '')}">`)
+      .join('');
+    return `<div class="note-box remembered">
+      <p>${esc(buyerLine(draft))}</p>
+      <button type="button" class="btn ghost" data-act="edit-buyer">Popraw</button>
+      <button type="button" class="btn ghost" data-act="not-me">to nie ja</button>
+      ${hidden}
+    </div>`;
+  }
+  return `${field('name', 'Imię i nazwisko', draft.name, 'text', err.name, 'autocomplete="name"')}
+      ${field('phone', 'Telefon', draft.phone, 'tel', err.phone, 'autocomplete="tel" inputmode="tel"')}
+      ${field('email', 'E-mail (nieobowiązkowy)', draft.email, 'email', err.email, 'autocomplete="email" inputmode="email"')}
+      ${field('street', 'Ulica i numer', draft.street, 'text', err.street, 'autocomplete="street-address"')}
+      ${field('postcode', 'Kod pocztowy', draft.postcode, 'text', err.postcode, 'autocomplete="postal-code" inputmode="numeric" maxlength="6" placeholder="00-000"')}
+      ${field('city', 'Miasto', draft.city, 'text', err.city, 'autocomplete="address-level2"')}`;
+}
+
+function readInterest() {
+  if (Array.isArray(state.interest)) return state.interest;
+  const stored = readJson(INTEREST_KEY, []);
+  state.interest = Array.isArray(stored) ? stored : [];
+  return state.interest;
+}
+
+function soonHtml() {
+  const saved = readInterest();
+  const cards = SOON.map((item) => {
+    const on = saved.includes(item.id);
+    return `<article class="soon-card">
+      <h3>${esc(item.title)}</h3>
+      <p>${esc(item.text)}</p>
+      <button type="button" class="btn" data-act="interest" data-id="${esc(item.id)}" aria-pressed="${on ? 'true' : 'false'}">${on ? 'Zapisane tylko na tym telefonie' : 'Zapisz na tym telefonie'}</button>
+    </article>`;
+  }).join('');
+  return `<section class="soon"><h2>Wkrótce</h2><p class="hint">Nie wysyłamy tego nikomu. Zapis zostaje tylko na tym telefonie.</p>${cards}</section>`;
+}
+
+function installCard() {
+  if (state.installHide || inStandalone()) return '';
+  const kind = installKind({
+    ua: navigator.userAgent,
+    standalone: inStandalone(),
+    promptReady: state.installReady,
+  });
+  if (kind === 'installed' || kind === 'other') return '';
+  const hide = '<button type="button" class="btn ghost" data-act="install-hide">Nie teraz</button>';
+  if (kind === 'ios') {
+    return `<aside class="install-card"><p>Dodaj sklep na telefon</p><ol><li>Stuknij Udostępnij</li><li>Wybierz Do ekranu początkowego</li></ol>${hide}</aside>`;
+  }
+  if (kind === 'android') {
+    return `<aside class="install-card"><p>Dodaj sklep na telefon</p><button type="button" class="btn primary" data-act="install">Zainstaluj</button>${hide}</aside>`;
+  }
+  return `<aside class="install-card"><p>W Chrome otwórz menu i wybierz Dodaj do ekranu głównego.</p>${hide}</aside>`;
+}
+
+function reelsMain() {
+  const films = reelItems(state.products);
+  if (!films.length) {
+    return `<main class="center"><h1>Rolki</h1><p>Nie ma jeszcze filmów.</p><p><a class="btn primary" href="#/">Wróć do sklepu</a></p></main>`;
+  }
+  const cards = films.map((item) => {
+    const code = encodeURIComponent(String(item.code || ''));
+    return `<section class="reel">
+      <video muted playsinline loop src="${esc(videoSrc(item.video_url))}"></video>
+      <a class="reel-back" href="#/">← Sklep</a>
+      <div class="reel-bar">
+        <p class="reel-title">${esc(item.title || 'Produkt')}</p>
+        <a class="btn primary" href="#/p/${code}">Kup teraz</a>
+        <button type="button" class="btn" data-act="sound">Włącz dźwięk</button>
+      </div>
+    </section>`;
+  }).join('');
+  return `<main class="reels">${cards}</main>`;
+}
+
+function homeSurpriseHtml() {
+  let seen = '';
+  try { seen = sessionStorage.getItem(LOS_HOME_KEY) || ''; } catch { seen = '1'; }
+  const next = openHomeSurprise(seen, !!state.losHold);
+  state.losHold = next.hold;
+  if (next.mark) {
+    try { sessionStorage.setItem(LOS_HOME_KEY, '1'); } catch { /* private mode still shows it in this paint */ }
+  }
+  return next.show ? losCard('home') : '';
+}
+
+function losCard(place) {
+  const line = state.losLine?.[place] || '';
+  return `<button type="button" class="los${line ? ' flipped' : ''}" data-act="los" data-place="${place}" aria-pressed="${line ? 'true' : 'false'}" aria-label="${esc(LUCKY_LABEL)}">
+    <span class="los-inner">
+      <span class="los-face los-front"><small>Niespodzianka</small><b>${esc(LUCKY_LABEL)}</b></span>
+      <span class="los-face los-back">${esc(line)}</span>
+    </span>
+  </button>`;
+}
+
 function field(id, label, value, type, error, extra) {
   return `<label class="field" for="${id}"><span>${label}</span>
     <input id="${id}" name="${id}" type="${type}" value="${esc(value || '')}" ${error ? 'aria-invalid="true"' : ''} ${extra || ''}>
@@ -458,6 +689,7 @@ function thanksMain(order) {
     <p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(order.order_no)}">Kopiuj numer</button></p>
     <div class="paybox">${rows}</div>
     ${proofBox(order.order_no, order.phone)}
+    ${losCard('thanks')}
     <p>${esc(MESSENGER_LINE)}</p>
     <p><a class="btn primary block" href="#/">Wróć do sklepu</a></p>
   </main>`;
@@ -482,19 +714,258 @@ function proofBox(orderNo, phone) {
   </section>`;
 }
 
+function syncPromo() {
+  const route = parseRoute(location.hash).name;
+  const homeish = route === 'catalog' || route === 'account';
+  if (!homeish || state.promoDismissed) {
+    state.promoOpen = false;
+    return;
+  }
+  if (state.promoOpen) return;
+  let seen = false;
+  try { seen = sessionStorage.getItem(PROMO_SEEN_KEY) === '1'; } catch { seen = false; }
+  if (!shouldShowPromo(route, state.products, seen)) return;
+  try { sessionStorage.setItem(PROMO_SEEN_KEY, '1'); } catch { /* private mode still shows it once in memory */ }
+  state.promoOpen = true;
+}
+
+function promoHtml() {
+  if (!state.promoOpen) return '';
+  const product = promoProduct(state.products);
+  if (!product) return '';
+  const photo = photoList(product)[0];
+  const code = encodeURIComponent(String(product.code || ''));
+  return `<aside class="promo" id="promo">
+    ${thumbHtml(photo, product.title || 'Paczka', true)}
+    <span class="promo-copy">
+      <strong>${esc(product.title || 'Paczka')}</strong>
+      <span class="price">${esc(formatZl(product.price))}</span>
+      <a class="btn primary" href="#/p/${code}">Zobacz</a>
+    </span>
+    <button type="button" class="promo-x" data-act="promo-close" aria-label="Zamknij">×</button>
+  </aside>`;
+}
+
+function accountMain() {
+  if (!state.session) return accountLogin();
+  return accountOrdersView();
+}
+
+function accountNoteHtml() {
+  if (!state.accountNote) return '';
+  return `<p class="note-box" role="status">${esc(state.accountNote)}</p>`;
+}
+
+function accountLogin() {
+  return `<main>
+    <h1>Moje konto</h1>
+    <p class="hint">Wyślemy link do logowania na e-mail. Hasło nie jest potrzebne.</p>
+    ${accountNoteHtml()}
+    <p class="service">${esc(SERVICE_LINE)}</p>
+    <form id="magic-link">
+      ${field('email', 'E-mail', state.accountDraft.email, 'email', '', 'autocomplete="email" inputmode="email" maxlength="200"')}
+      <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Wyślij link logowania</button>
+    </form>
+  </main>`;
+}
+
+function accountOrdersView() {
+  if (!state.accountLoaded) {
+    return `<main>
+      <h1>Twoje zamówienia</h1>
+      <p><button type="button" class="btn ghost" data-act="logout">Wyloguj</button></p>
+      <p>Ładowanie…</p>
+    </main>`;
+  }
+  const claim = state.accountLinks.length
+    ? ''
+    : `<form id="claim-order">
+        <p class="hint">Podaj telefon i numer jednego zamówienia (KS albo Selmo), żeby pokazać resztę.</p>
+        ${field('claim-phone', 'Telefon', state.accountDraft.phone, 'tel', '', 'inputmode="tel" autocomplete="tel"')}
+        ${field('claim-no', 'Numer zamówienia', state.accountDraft.orderNo, 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="40"')}
+        <button type="submit" class="btn primary block" ${state.accountBusy ? 'disabled' : ''}>Pokaż zamówienia</button>
+      </form>`;
+  return `<main>
+    <h1>Twoje zamówienia</h1>
+    <p><button type="button" class="btn ghost" data-act="logout">Wyloguj</button></p>
+    ${accountNoteHtml()}
+    ${claim}
+    ${state.accountFailed ? '' : (state.accountLinks.length ? accountOrderCards() : `<p>${esc(accountEmptyText(0))}</p>`)}
+    <p class="service">${esc(SERVICE_LINE)}</p>
+  </main>`;
+}
+
+function accountOrderCards() {
+  if (!state.accountOrders.length) return `<p>${esc(accountEmptyText(0))}</p>`;
+  return state.accountOrders.map((order) => {
+    const lines = order.lines.map((line) => `<li>${esc(line)}</li>`).join('');
+    const track = order.track
+      ? `<p><a class="btn" href="${esc(order.track)}" target="_blank" rel="noopener noreferrer">Śledź paczkę</a></p>`
+      : '';
+    return `<article class="order">
+      <p class="order-source">${esc(orderSourceLabel(order.source))}</p>
+      <header>
+        <time>${esc(formatWhen(order.created_at))}</time>
+        <strong class="price">${esc(order.order_no)}</strong>
+        <span class="status">${esc(order.status)}</span>
+      </header>
+      ${lines ? `<ul class="order-lines">${lines}</ul>` : ''}
+      <p class="price">${esc(formatZl(order.amount))}</p>
+      ${track}
+    </article>`;
+  }).join('');
+}
+
+function clearAccount() {
+  accountGen += 1;
+  state.accountLoading = false;
+  state.accountLoaded = false;
+  state.accountLinks = [];
+  state.accountOrders = [];
+  state.accountBusy = false;
+  state.accountFailed = false;
+}
+
+async function loadAccount() {
+  if (!state.session) return;
+  const gen = ++accountGen;
+  state.accountLoading = true;
+  state.accountLoaded = false;
+  try {
+    const links = await sb.from('shop_customer_links').select('phone9');
+    if (gen !== accountGen) return;
+    if (links.error) throw links.error;
+    state.accountLinks = links.data || [];
+    if (!state.accountLinks.length) {
+      state.accountOrders = [];
+      state.accountLoaded = true;
+      state.accountLoading = false;
+      state.accountFailed = false;
+      paint({ keep: true });
+      return;
+    }
+    const [shopRes, extRes] = await Promise.all([
+      sb.from('shop_orders').select('id,order_no,created_at,status,products_total,delivery_fee').order('created_at', { ascending: false }),
+      sb.from('ext_orders').select('order_no,created_at,status,products_total,items,dpd_waybill,dpd_state').order('created_at', { ascending: false }),
+    ]);
+    if (gen !== accountGen) return;
+    if (shopRes.error) throw shopRes.error;
+    if (extRes.error) throw extRes.error;
+    const ids = (shopRes.data || []).map((order) => order.id).filter(Boolean);
+    let shopItems = [];
+    if (ids.length) {
+      const itemsRes = await sb.from('shop_order_items').select('order_id,title,size,color,qty').in('order_id', ids);
+      if (gen !== accountGen) return;
+      if (itemsRes.error) throw itemsRes.error;
+      shopItems = itemsRes.data || [];
+    }
+    state.accountOrders = mergeAccountOrders(shopRes.data || [], shopItems, extRes.data || []);
+    state.accountLoaded = true;
+    state.accountFailed = false;
+    state.accountNote = state.accountNote && state.accountNote.startsWith('Numer dopisany') ? state.accountNote : '';
+  } catch {
+    if (gen !== accountGen) return;
+    state.accountOrders = [];
+    state.accountLoaded = true;
+    state.accountFailed = true;
+    state.accountNote = 'Nie udało się pobrać zamówień.';
+  }
+  state.accountLoading = false;
+  paint({ keep: true });
+}
+
+function rememberAccount(form) {
+  if (!form) return;
+  if (form.id === 'magic-link') state.accountDraft.email = String(form.elements.namedItem('email')?.value || '');
+  if (form.id === 'claim-order') {
+    state.accountDraft.phone = String(form.elements.namedItem('claim-phone')?.value || '');
+    state.accountDraft.orderNo = String(form.elements.namedItem('claim-no')?.value || '');
+  }
+}
+
+async function sendMagic(form) {
+  if (state.accountBusy) return;
+  rememberAccount(form);
+  const email = state.accountDraft.email.trim();
+  if (!emailOk(email)) {
+    state.accountNote = 'Podaj adres e-mail.';
+    state.magicSent = false;
+    paint({ keep: true });
+    return;
+  }
+  state.accountBusy = true;
+  state.accountNote = '';
+  paint({ keep: true });
+  const { error } = await sb.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: location.origin + location.pathname },
+  });
+  state.accountBusy = false;
+  state.magicSent = !error;
+  state.accountNote = error
+    ? 'Nie udało się wysłać linku. Spróbuj jeszcze raz.'
+    : 'Wysłaliśmy link. Otwórz go na tym telefonie.';
+  paint({ keep: true });
+}
+
+async function claimOrders(form) {
+  if (state.accountBusy) return;
+  rememberAccount(form);
+  const phone = state.accountDraft.phone;
+  const orderNo = state.accountDraft.orderNo.trim();
+  if (!phoneOk(phone) || !orderNo) {
+    state.accountNote = claimMessage('input');
+    paint({ keep: true });
+    return;
+  }
+  state.accountBusy = true;
+  state.accountNote = '';
+  paint({ keep: true });
+  let code = '';
+  try {
+    const { data, error } = await sb.rpc('shop_claim_orders', {
+      p_phone: normalizePhone(phone),
+      p_order_no: orderNo,
+    });
+    if (!error) code = claimCode(data);
+  } catch {
+    code = '';
+  }
+  state.accountBusy = false;
+  state.accountNote = claimMessage(code);
+  if (code === 'ok') {
+    state.accountLoaded = false;
+    state.accountLinks = [];
+  }
+  paint({ keep: true });
+}
+
+async function logout() {
+  clearAccount();
+  state.magicSent = false;
+  state.accountNote = '';
+  state.editBuyer = false;
+  saveDraft(emptyDraft());
+  try { await sb.auth.signOut({ scope: 'local' }); } catch { /* listener clears the screen */ }
+  state.session = null;
+  paint();
+}
+
 function ordersMain() {
-  const cards = state.mine.map((order) => `<article class="order">
+  const cards = state.mine.filter((order) => Number.isFinite(Number(order.to_pay_now))).map((order) => {
+    const rows = thanksLines(order).map((line, index) => {
+      const copy = copyValue(line, order, index);
+      return `<div class="copyline"><p>${esc(line)}</p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(copy)}">Kopiuj</button></div>`;
+    }).join('');
+    return `<article class="order">
       <header><strong class="price">${esc(order.order_no)}</strong></header>
+      <div class="paybox">${rows}</div>
       ${proofBox(order.order_no, order.phone)}
-    </article>`).join('');
+    </article>`;
+  }).join('');
   return `<main>
     <h1>Moje zamówienia</h1>
-    <p class="hint">Numer i telefon zostają w tym telefonie, żeby dołączyć potwierdzenie.</p>
-    <form id="find-order">
-      ${field('find-no', 'Numer zamówienia', '', 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="20"')}
-      ${field('find-phone', 'Telefon', '', 'tel', '', 'inputmode="tel" autocomplete="tel"')}
-      <button type="submit" class="btn">Pokaż zamówienie</button>
-    </form>
+    <p class="hint">Kwota i dane do przelewu zostają w tym telefonie razem z zamówieniem złożonym tutaj.</p>
     ${cards || '<p>Nie ma tu jeszcze zamówień z tego telefonu.</p>'}
   </main>`;
 }
@@ -509,6 +980,7 @@ function copyValue(line, order, index) {
 }
 
 function afterPaint() {
+  watchReels();
   const gallery = document.getElementById('gallery');
   const dots = document.getElementById('dots');
   if (!gallery || !dots) return;
@@ -516,10 +988,32 @@ function afterPaint() {
     const index = Math.round(gallery.scrollLeft / Math.max(gallery.clientWidth, 1));
     dots.querySelectorAll('button').forEach((button, i) => button.classList.toggle('on', i === index));
     const live = document.getElementById('gal-live');
-    if (live) live.textContent = `Zdjęcie ${index + 1} z ${dots.children.length}`;
+    if (live) {
+      const label = dots.children[index]?.getAttribute('aria-label') || '';
+      live.textContent = label ? `${label}, ${index + 1} z ${dots.children.length}` : '';
+    }
   };
   gallery.addEventListener('scroll', mark, { passive: true });
   mark();
+}
+
+function watchReels() {
+  const root = document.querySelector('main.reels');
+  if (!root) return;
+  const videos = [...root.querySelectorAll('video')];
+  if (!videos.length) return;
+  if (typeof IntersectionObserver !== 'function') {
+    videos[0].play().catch(() => {});
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const video = entry.target;
+      if (reelOnScreen(entry.intersectionRatio) && entry.isIntersecting) video.play().catch(() => {});
+      else video.pause();
+    }
+  }, { root, threshold: [0, 0.6, 1] });
+  videos.forEach((video) => observer.observe(video));
 }
 
 function scrollGallery(dir) {
@@ -556,6 +1050,7 @@ function readCheckout(form) {
     payment: String(data.get('payment') || ''),
     note: String(data.get('note') || ''),
     terms: !!form.elements.namedItem('terms')?.checked,
+    remember: !!form.elements.namedItem('remember')?.checked,
   };
 }
 
@@ -575,9 +1070,12 @@ async function placeOrder(form) {
   if (form.elements.postcode) form.elements.postcode.value = input.postcode;
   saveDraft({ ...input, terms: input.terms });
   const lines = pricedLines();
-  const checked = validateCheckout(input, lines);
-  const stockMsg = state.loaded ? stockProblem(lines, state.products) : '';
+  const checked = validateCheckout(input, lines.filter((line) => !colourGone(line)));
+  const stockMsg = state.loaded ? stockProblem(lines, state.products, state.variants) : '';
   if (!checked.ok || stockMsg) {
+    if (['name', 'phone', 'email', 'street', 'postcode', 'city'].some((key) => checked.errors[key])) {
+      state.editBuyer = true;
+    }
     state.fieldErrors = checked.errors;
     state.formError = stockMsg || '';
     if (stockMsg) state.fieldErrors = { ...checked.errors, items: checked.errors.items || stockMsg };
@@ -594,23 +1092,26 @@ async function placeOrder(form) {
     button.disabled = true;
     button.textContent = 'Wysyłam zamówienie…';
   }
-  const payload = buildOrderPayload(input, lines);
+  state.checkoutKey = orderAttemptKey(state.checkoutKey);
+  const payload = buildOrderPayload(input, lines, state.checkoutKey);
   let failed = '';
   try {
     const { data, error } = await sb.rpc('shop_place_order', { p: payload });
     if (error) {
       failed = /failed to fetch|network|load failed/i.test(`${error.message || ''}`)
-        ? 'Brak sieci. Sprawdź połączenie i spróbuj jeszcze raz.'
+        ? ORDER_UNSURE
         : 'Nie udało się złożyć zamówienia. Spróbuj jeszcze raz.';
     } else {
       const body = coerceOrder(data);
       if (body?.error) {
-        failed = mapOrderError(body.error);
+        failed = refusedLine(body.error, lines) || variantError(body.error) || mapOrderError(body.error);
+        state.problemCode = '';
         const raw = String(body.error);
-        state.problemCode = raw.startsWith('out_of_stock:') ? raw.split(':').slice(1).join(':') : '';
+        if (raw.startsWith('color:') || raw.startsWith('out_of_stock:')) loadVariants();
       } else if (!body?.order_no) {
-        failed = 'Nie udało się złożyć zamówienia. Spróbuj jeszcze raz.';
+        failed = ORDER_UNSURE;
       } else {
+        state.checkoutKey = '';
         saveThanks({
           order_no: body.order_no,
           products_total: body.products_total,
@@ -625,7 +1126,7 @@ async function placeOrder(form) {
       }
     }
   } catch {
-    failed = 'Brak sieci. Sprawdź połączenie i spróbuj jeszcze raz.';
+    failed = ORDER_UNSURE;
   }
   state.busy = false;
   state.formError = failed;
@@ -635,12 +1136,14 @@ async function placeOrder(form) {
 
 function syncPick(product) {
   const sizes = splitList(product.sizes);
-  const colors = splitList(product.colors);
+  const available = colorViews(product, state.variants)
+    .filter((view) => view.stock == null || view.stock > 0)
+    .map((view) => view.name);
   if (state.pick.code !== String(product.code)) {
     state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
   }
   state.pick.size = settleOption(sizes, state.pick.size);
-  state.pick.color = settleOption(colors, state.pick.color);
+  state.pick.color = settleOption(available, state.pick.color);
 }
 
 function addCurrent() {
@@ -649,11 +1152,12 @@ function addCurrent() {
   if (!product) return;
   syncPick(product);
   const sizes = splitList(product.sizes);
-  const colors = splitList(product.colors);
+  const colors = colorViews(product, state.variants).filter((view) => view.stock == null || view.stock > 0);
   if (sizes.length && !state.pick.size) { toast('Wybierz rozmiar.'); return; }
   if (colors.length && !state.pick.color) { toast('Wybierz kolor.'); return; }
-  const stock = stockOf(product);
+  const stock = stockOf(product, state.pick.color);
   if (stock != null && stock <= 0) { toast('Wyprzedane.'); return; }
+  const allowance = allowanceFor(product, state.pick.color);
   const result = upsertLine(state.basket, {
     product_id: product.id,
     code: String(product.code || ''),
@@ -663,14 +1167,16 @@ function addCurrent() {
     size: state.pick.size || '',
     color: state.pick.color || '',
     photo: photoList(product)[0] || '',
-  }, stock == null ? undefined : stock);
+  }, allowance);
   setBasket(result.lines);
+  paint({ keep: true });
   const count = document.getElementById('cart-count');
   const n = countPieces();
   if (count) count.textContent = n ? String(n) : '';
   const link = document.querySelector('.cartlink');
   if (link) link.setAttribute('aria-label', `Koszyk, ${n} szt.`);
-  toast(result.added > 0 ? 'Dodano do koszyka.' : 'W koszyku jest już cały dostępny stan.');
+  if (result.added > 0) toast('Dodano.', { href: '#/koszyk', label: 'Do kasy' });
+  else toast('W koszyku jest już cały dostępny stan.');
 }
 
 function onClick(event) {
@@ -678,14 +1184,40 @@ function onClick(event) {
   if (!target) return;
   const act = target.dataset.act;
   if (act === 'reload') { loadProducts(); return; }
-  if (act === 'luck') {
-    const el = document.getElementById('slogan');
-    if (!el) return;
-    el.textContent = pickSlogan();
-    el.hidden = false;
-    el.classList.remove('pop');
-    void el.offsetWidth;
-    el.classList.add('pop');
+  if (act === 'kolekcja') {
+    document.getElementById('kolekcja')?.scrollIntoView({ block: 'start' });
+    return;
+  }
+  if (act === 'edit-buyer') {
+    state.editBuyer = true;
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'not-me') {
+    state.editBuyer = true;
+    saveDraft({
+      ...emptyDraft(),
+      delivery: state.draft.delivery,
+      point_code: state.draft.point_code,
+      payment: state.draft.payment,
+      note: state.draft.note,
+    });
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'sound') {
+    const video = target.closest('.reel')?.querySelector('video');
+    if (!video) return;
+    video.muted = !video.muted;
+    target.textContent = video.muted ? 'Włącz dźwięk' : 'Wyłącz dźwięk';
+    if (!video.muted) video.play().catch(() => {});
+    return;
+  }
+  if (act === 'los') {
+    const card = target.closest('.los');
+    const place = card?.dataset.place === 'thanks' ? 'thanks' : 'home';
+    state.losLine[place] = keepSlogan(state.losLine[place], pickSlogan());
+    paint({ keep: true });
     return;
   }
   if (act === 'gal') { scrollGallery(Number(target.dataset.dir) || 1); return; }
@@ -696,14 +1228,40 @@ function onClick(event) {
     return;
   }
   if (act === 'install') { offerInstallPrompt(); return; }
+  if (act === 'interest') {
+    state.interest = toggleInterest(readInterest(), target.dataset.id || '');
+    writeJson(INTEREST_KEY, state.interest);
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'install-hide') {
+    state.installHide = true;
+    try { localStorage.setItem(INSTALL_HIDE_KEY, '1'); } catch { /* the card stays hidden for this visit */ }
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'promo-close') {
+    state.promoDismissed = true;
+    state.promoOpen = false;
+    try { sessionStorage.setItem(PROMO_SEEN_KEY, '1'); } catch { /* already counted for this visit */ }
+    paint({ keep: true });
+    return;
+  }
+  if (act === 'logout') { logout(); return; }
   if (act === 'pick') {
     const kind = target.dataset.kind;
     const product = findProduct(state.pick.code);
     if (!product || (kind !== 'size' && kind !== 'color')) return;
-    const options = splitList(kind === 'size' ? product.sizes : product.colors);
+    const options = kind === 'size'
+      ? splitList(product.sizes)
+      : colorViews(product, state.variants).filter((view) => view.stock == null || view.stock > 0).map((view) => view.name);
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
-    else state.pick.color = chosen;
+    else {
+      state.pick.color = chosen;
+      paint({ keep: true });
+      return;
+    }
     document.querySelectorAll('[data-act="pick"]').forEach((button) => {
       const selected = button.dataset.kind === 'size' ? state.pick.size : state.pick.color;
       const on = button.dataset.kind === kind ? button.dataset.val === chosen : button.dataset.val === selected;
@@ -730,9 +1288,9 @@ function onClick(event) {
     const key = target.dataset.key || '';
     const line = state.basket.find((item) => lineKey(item) === key);
     const product = line ? productById(line.product_id) : null;
-    const stock = product ? stockOf(product) : null;
-    if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, stock == null ? undefined : stock));
-    else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), stock == null ? undefined : stock));
+    const allowance = product ? allowanceFor(product, line.color) : undefined;
+    if (act === 'drop') setBasket(setLineQty(state.basket, key, 0, allowance));
+    else setBasket(setLineQty(state.basket, key, (line?.qty || 1) + (Number(target.dataset.dir) || 0), allowance));
     paint({ keep: true });
     return;
   }
@@ -751,6 +1309,7 @@ function onInput(event) {
   }
   const form = el.form;
   if (form && form.id === 'checkout') saveDraft(readCheckout(form));
+  if (form && (form.id === 'magic-link' || form.id === 'claim-order')) rememberAccount(form);
 }
 
 function onChange(event) {
@@ -769,18 +1328,14 @@ function onChange(event) {
 
 function onSubmit(event) {
   const form = event.target;
-  if (form.id === 'find-order') {
+  if (form.id === 'magic-link') {
     event.preventDefault();
-    const orderNo = String(form.elements.namedItem('find-no')?.value || '').trim();
-    const phone = String(form.elements.namedItem('find-phone')?.value || '');
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(orderNo) || !phoneOk(phone)) {
-      toast('Podaj numer zamówienia i telefon — 9 cyfr.');
-      return;
-    }
-    state.mine = rememberOrder(state.mine, { order_no: orderNo, phone, at: new Date().toISOString() });
-    writeJson(ORDERS_KEY, state.mine);
-    form.reset();
-    paint({ keep: true });
+    sendMagic(form);
+    return;
+  }
+  if (form.id === 'claim-order') {
+    event.preventDefault();
+    claimOrders(form);
     return;
   }
   if (form.id !== 'checkout') return;
@@ -888,9 +1443,17 @@ async function loadProducts() {
     setBasket(clampBasket(state.basket, state.products));
     state.loaded = true;
     state.error = '';
+    loadVariants();
   }
   paint({ keep: true });
   if (error && hadCatalog) toast('Nie udało się odświeżyć.');
+}
+
+async function loadVariants() {
+  const { data, error } = await sb.from('shop_variants').select('product_id,color,stock');
+  if (error) return;
+  state.variants = cleanVariants(data);
+  paint({ keep: true });
 }
 
 function start() {
@@ -898,10 +1461,21 @@ function start() {
   const storedMine = readJson(ORDERS_KEY, []);
   const storedRows = Array.isArray(storedMine) ? storedMine : [];
   state.mine = storedRows.slice().reverse().reduce((list, row) => rememberOrder(list, row), []);
-  const storedDraft = readJson(DRAFT_KEY, {});
-  state.draft = { ...emptyDraft(), ...(storedDraft && typeof storedDraft === 'object' ? storedDraft : {}) };
+  const storedDraft = storedBuyer(readJson(DRAFT_KEY, {}));
+  state.draft = storedDraft ? { ...emptyDraft(), ...storedDraft } : emptyDraft();
   state.thanks = loadThanks();
+  try { state.installHide = localStorage.getItem(INSTALL_HIDE_KEY) === '1'; } catch { state.installHide = false; }
   const root = document.getElementById('app');
+  root.addEventListener('load', (event) => {
+    const img = event.target;
+    if (img?.tagName === 'IMG') img.classList.add('in');
+  }, true);
+  root.addEventListener('error', (event) => {
+    const img = event.target;
+    if (img?.tagName !== 'IMG') return;
+    const fallback = img.dataset.fallback || '';
+    if (fallback && img.getAttribute('src') !== fallback) img.src = fallback;
+  }, true);
   root.addEventListener('click', onClick);
   root.addEventListener('input', onInput);
   root.addEventListener('change', onChange);
@@ -915,9 +1489,41 @@ function start() {
     event.preventDefault();
     scrollGallery(event.key === 'ArrowRight' ? 1 : -1);
   });
+  const authError = new URLSearchParams(location.search);
+  if (authError.get('error') || authError.get('error_description')) {
+    state.accountNote = 'Link logowania wygasł albo jest niepoprawny. Wyślij nowy.';
+    if (parseRoute(location.hash).name !== 'account') location.hash = '#/konto';
+  }
   state.loading = true;
+  booted = true;
   paint();
   loadProducts();
+  if (authError.get('code') && !authError.get('error') && !authError.get('error_description')) {
+    sb.auth.getSession().then(({ data }) => {
+      if (!booted || data?.session) return;
+      state.accountNote = OTHER_BROWSER_NOTE;
+      if (parseRoute(location.hash).name !== 'account') location.hash = '#/konto';
+      else paint({ keep: true });
+    }).catch(() => {});
+  }
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'TOKEN_REFRESHED' || ignoreSameSignIn(event, state.session?.user?.id, session?.user?.id)) {
+      state.session = session;
+      return;
+    }
+    const had = !!state.session;
+    state.session = session;
+    if (!session) {
+      clearAccount();
+    } else if (!had || event === 'SIGNED_IN') {
+      state.accountLoaded = false;
+      if (returnFromEmail && parseRoute(location.hash).name !== 'account') {
+        location.hash = '#/konto';
+        return;
+      }
+    }
+    if (booted) paint();
+  });
 }
 
 function offerInstallPrompt() {
@@ -942,16 +1548,18 @@ if (typeof window !== 'undefined') {
     state.installReady = true;
     const button = document.getElementById('install');
     if (button) button.hidden = false;
+    if (booted) paint({ keep: true });
   });
   window.addEventListener('appinstalled', () => {
     state.installEvent = null;
     state.installReady = false;
     const button = document.getElementById('install');
     if (button) button.hidden = true;
+    if (booted) paint({ keep: true });
   });
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=12', { scope: './' }).catch(() => {});
     });
   }
 }

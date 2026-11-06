@@ -29,6 +29,8 @@ In Supabase → Authentication → URL configuration, add the owner panel to Red
 
 Google sign-in is the same Supabase provider as the packing app. The shop sends people back to the current page (`location.origin + location.pathname`).
 
+Klienci logują się na `#/konto` magic linkiem (`signInWithOtp`). Adres powrotu to też `location.origin + location.pathname`, więc działa na github.io i na własnej domenie. Trzeba dodać adres sklepu do Redirect URLs, na przykład `https://<user>.github.io/kz-ai/shop/` i `https://<user>.github.io/kz-ai/shop/index.html`. Sesja klienta jest w osobnym kluczu przeglądarki (`kombi-shop-auth`) i nie zastępuje logowania właściciela w panelu.
+
 ## Data
 
 Same Supabase project as the packing app. The browser only has the publishable key.

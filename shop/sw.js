@@ -1,11 +1,22 @@
 // Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
-const CACHE = 'kombi-sklep-shell-v1';
+// Shell scripts share ?v=12 so a new shop.js cannot run with an older common.js.
+const VERSION = '12';
+const CACHE = `kombi-sklep-shell-v${VERSION}`;
 const SHELL = [
   './',
   './index.html',
   './shop.css',
   './shop.js',
   './common.js',
+  './account.js',
+  './variants.js',
+  './window.js',
+  './buy.js',
+  './checkout.js',
+  './los.js',
+  './rolki.js',
+  './install.js',
+  './soon.js',
   './admin.html',
   './admin.js',
   './regulamin.html',
@@ -19,9 +30,13 @@ const SHELL = [
   './icon-maskable-512.png',
 ];
 
+function shellUrl(item) {
+  return item.endsWith('.js') ? `${item}?v=${VERSION}` : item;
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()),
+    caches.open(CACHE).then((cache) => cache.addAll(SHELL.map(shellUrl))).then(() => self.skipWaiting()),
   );
 });
 
@@ -42,7 +57,8 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.hostname.endsWith('supabase.co') || url.hostname.includes('supabase')) return;
-  if (url.origin !== self.location.origin || url.search) return;
+  if (url.origin !== self.location.origin) return;
+  if (url.search && url.search !== `?v=${VERSION}`) return;
   if (!isShell(url)) return;
   event.respondWith(networkFirst(req));
 });
@@ -54,7 +70,7 @@ function isShell(url) {
 async function networkFirst(req) {
   const cache = await caches.open(CACHE);
   try {
-    const res = await fetch(req);
+    const res = await fetch(req, { cache: 'reload' });
     if (res && res.ok) cache.put(req, res.clone());
     return res;
   } catch (err) {

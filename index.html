@@ -12,6 +12,14 @@
       var dir = path.endsWith('/') ? path : path.replace(/[^/]*$/, '');
       var hash = location.hash || '';
       var search = location.search || '';
+      function shopHash(value) {
+        var raw = String(value || '').replace(/^#/, '');
+        if (!raw) return false;
+        if (raw.charAt(0) !== '/') raw = '/' + raw;
+        var route = raw.split('?')[0].replace(/\/+$/, '') || '/';
+        if (route === '/koszyk' || route === '/zamowienie' || route === '/moje' || route === '/konto' || route === '/rolki') return true;
+        return /^\/p\/[^/]+$/.test(route);
+      }
       var packingHash = hash && hash !== '#';
       var authReturn = /(?:^|[?&])(code|error|error_description|access_token|refresh_token)=/.test(search);
       var packingPhone = false;
@@ -24,7 +32,8 @@
           }
         }
       } catch (err) { /* private mode opens the shop */ }
-      if (packingHash || authReturn || packingPhone) location.replace(dir + 'pakowanie/' + search + hash);
+      if (shopHash(hash)) location.replace(dir + 'shop/' + search + hash);
+      else if (packingHash || authReturn || packingPhone) location.replace(dir + 'pakowanie/' + search + hash);
       else location.replace(dir + 'shop/' + search);
     })();
   </script>

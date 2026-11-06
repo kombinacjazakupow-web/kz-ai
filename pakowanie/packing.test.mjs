@@ -113,4 +113,13 @@ test('packing worker stays inside /pakowanie/ and keeps the shop cache', () => {
   assert.match(root, /kombi-tick-queue/);
   assert.match(root, /sb-ghhatjkcgilnruluhxyr-auth-token/);
   assert.match(root, /pakowanie\//);
+  assert.match(root, /shopHash\(hash\)/);
+  const found = root.match(/function shopHash\(value\) \{[\s\S]*?\n      \}/);
+  assert.ok(found);
+  const shopHash = new Function(`${found[0]}; return shopHash;`)();
+  assert.equal(shopHash('#/p/K-001'), true);
+  assert.equal(shopHash('#/koszyk'), true);
+  assert.equal(shopHash('#/konto'), true);
+  assert.equal(shopHash('#/bag/1'), false);
+  assert.equal(shopHash('#/'), false);
 });

@@ -2,7 +2,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import {
   SUPABASE_URL, SUPABASE_KEY, esc, formatZl, formatWhen, photoUrl, normalizeList,
   nextProductCode, ownerFlag, parseAdminRoute, sortProducts, ORDER_STATUS, STATUS_NEXT, STATUS_ACTION,
-} from './common.js';
+} from '#common';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },

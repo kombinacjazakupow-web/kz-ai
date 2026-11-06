@@ -85,6 +85,10 @@ export function photoUrl(path) {
   return `${SUPABASE_URL}/storage/v1/object/public/shop-photos/${encoded}`;
 }
 
+export function photoSrc(path) {
+  return photoUrl(path);
+}
+
 const PROOF_TYPES = {
   jpg: 'image/jpeg',
   png: 'image/png',
@@ -98,6 +102,12 @@ export function videoSrc(value) {
   if (!raw) return '';
   if (/^https:\/\/[^\s"'<>]+$/i.test(raw)) return raw;
   return photoUrl(raw);
+}
+
+export function slidePlan(hasFilm, photoCount) {
+  const photos = Math.max(0, Math.floor(Number(photoCount)) || 0);
+  const total = (hasFilm ? 1 : 0) + photos;
+  return { total, controls: total > 1 };
 }
 
 export function proofKind(file) {
@@ -156,7 +166,16 @@ export function rememberOrder(list, order) {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(orderNo)) return Array.isArray(list) ? list.slice(0, 20) : [];
   const phone = normalizePhone(order?.phone || '');
   const next = (Array.isArray(list) ? list : []).filter((row) => row?.order_no !== orderNo);
-  next.unshift({ order_no: orderNo, phone, at: String(order?.at || '') });
+  const row = { order_no: orderNo, phone, at: String(order?.at || '') };
+  const due = Number(order?.to_pay_now);
+  if (Number.isFinite(due)) {
+    row.to_pay_now = due;
+    row.payment = String(order?.payment || '');
+    row.cod_amount = Number(order?.cod_amount) || 0;
+    row.products_total = Number(order?.products_total) || 0;
+    row.delivery_fee = Number(order?.delivery_fee) || 0;
+  }
+  next.unshift(row);
   return next.slice(0, 20);
 }
 
@@ -220,6 +239,8 @@ export function parseRoute(hash) {
   if (clean === '/koszyk') return { name: 'basket' };
   if (clean === '/zamowienie') return { name: 'checkout' };
   if (clean === '/moje') return { name: 'orders' };
+  if (clean === '/konto') return { name: 'account' };
+  if (clean === '/rolki') return { name: 'reels' };
   const match = clean.match(/^\/p\/([^/]+)$/);
   if (!match) return { name: 'catalog' };
   let code = match[1];
@@ -367,7 +388,17 @@ export function validateCheckout(form, lines) {
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
-export function buildOrderPayload(form, lines) {
+export const ORDER_UNSURE = 'Nie mamy pewności, czy zamówienie doszło. Sprawdź Moje zamówienia, zanim wyślesz je jeszcze raz.';
+
+const ATTEMPT_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function orderAttemptKey(current, makeId = () => crypto.randomUUID()) {
+  const key = String(current || '');
+  if (ATTEMPT_KEY.test(key)) return key;
+  return makeId();
+}
+
+export function buildOrderPayload(form, lines, clientKey) {
   const payload = {
     name: String(form.name || '').trim(),
     phone: normalizePhone(form.phone),
@@ -386,6 +417,8 @@ export function buildOrderPayload(form, lines) {
     })),
   };
   if (form.delivery === 'dpd_point') payload.point_code = String(form.point_code || '').trim();
+  const attempt = String(clientKey || '');
+  if (ATTEMPT_KEY.test(attempt)) payload.client_key = attempt;
   return payload;
 }
 
@@ -393,11 +426,8 @@ export function mapOrderError(code) {
   const raw = String(code || '').trim();
   const splitAt = raw.indexOf(':');
   const key = splitAt === -1 ? raw : raw.slice(0, splitAt);
-  const rest = splitAt === -1 ? '' : raw.slice(splitAt + 1).trim().slice(0, 40);
-  if (key === 'out_of_stock') {
-    const base = 'Ten produkt właśnie się wyprzedał.';
-    return rest ? `${base} (${rest})` : base;
-  }
+  if (key === 'color') return 'Ten kolor właśnie się skończył – wybierz inny';
+  if (key === 'out_of_stock') return 'Ktoś był szybszy – ten kolor jest już wyprzedany';
   const table = {
     phone: 'Sprawdź numer telefonu — potrzebujemy 9 cyfr.',
     postcode: 'Sprawdź kod pocztowy. Poprawny format to 00-000.',
@@ -424,20 +454,59 @@ export function thanksLines(order) {
   return lines;
 }
 
-export function stockProblem(lines, products) {
+function lineLabel(line) {
+  return [line?.title, line?.color, line?.size].filter(Boolean).join(' · ');
+}
+
+export function refusedLine(code, lines) {
+  const raw = String(code || '').trim();
+  const at = raw.indexOf(':');
+  if (at < 1) return '';
+  const key = raw.slice(0, at);
+  if (key !== 'color' && key !== 'out_of_stock') return '';
+  const productCode = raw.slice(at + 1).trim();
+  const names = (lines || [])
+    .filter((line) => String(line?.code || '') === productCode)
+    .map(lineLabel)
+    .filter(Boolean);
+  if (!names.length) return '';
+  const name = names.join(', ');
+  if (key === 'color') return `${name}: ten kolor właśnie się skończył – wybierz inny`;
+  return `${name}: ten kolor jest już wyprzedany`;
+}
+
+export function stockProblem(lines, products, variants) {
   if (!products) return '';
+  const rows = Array.isArray(variants) ? variants : [];
   const totals = new Map();
   for (const line of lines || []) {
     const product = products.find((item) => item.id === line.product_id);
-    if (!product || product.active === false) return 'W koszyku jest produkt, który jest już niedostępny.';
+    if (!product || product.active === false) {
+      const name = lineLabel(line);
+      return name ? `${name} jest już niedostępny.` : 'W koszyku jest produkt, który jest już niedostępny.';
+    }
+    const mine = rows.filter((row) => row.product_id === line.product_id);
+    if (mine.length && line.color) {
+      const key = String(line.color).toLocaleLowerCase('pl');
+      const hit = mine.find((row) => String(row.color || '').toLocaleLowerCase('pl') === key);
+      const qty = Number(line.qty) || 0;
+      if (!hit || hit.stock < qty) return `${lineLabel(line) || 'Ta pozycja'}: ten kolor właśnie się skończył.`;
+    }
     const id = String(line.product_id);
     totals.set(id, (totals.get(id) || 0) + (Number(line.qty) || 0));
   }
   for (const [id, qty] of totals) {
     const product = products.find((item) => item.id === id);
     const stock = Number(product?.stock);
-    if (Number.isFinite(stock) && stock <= 0) return 'Ten produkt właśnie się wyprzedał.';
-    if (Number.isFinite(stock) && qty > stock) return 'Za duża ilość względem stanu. Zmniejsz liczbę sztuk.';
+    const name = (lines || []).filter((line) => String(line.product_id) === id).map(lineLabel).filter(Boolean).join(', ');
+    if (Number.isFinite(stock) && stock <= 0) {
+      return name ? `${name}: ten produkt właśnie się wyprzedał.` : 'Ten produkt właśnie się wyprzedał.';
+    }
+    if (Number.isFinite(stock) && qty > stock) {
+      return name
+        ? `${name}: za duża ilość względem stanu. Zmniejsz liczbę sztuk.`
+        : 'Za duża ilość względem stanu. Zmniejsz liczbę sztuk.';
+    }
   }
   return '';
 }
