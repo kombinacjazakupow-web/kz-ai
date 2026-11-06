@@ -10,7 +10,8 @@ export function cleanVariants(rows) {
     const color = String(row?.color || '').trim();
     const stock = Number(row?.stock);
     if (!productId || !color || !Number.isFinite(stock)) continue;
-    const seconds = Number(row?.video_seconds);
+    const rawSeconds = row?.video_seconds;
+    const seconds = rawSeconds == null || rawSeconds === '' ? Number.NaN : Number(rawSeconds);
     out.push({
       product_id: productId,
       color,
@@ -49,6 +50,19 @@ export function colorMoment(product, color, variants) {
   if (hit?.video_seconds == null || hit.video_seconds === '') return null;
   const seconds = Number(hit.video_seconds);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+export function momentReady(duration) {
+  const n = Number(duration);
+  return Number.isFinite(n) && n > 0;
+}
+
+export function momentSliderValue(saved, duration) {
+  if (!momentReady(duration)) return null;
+  if (saved == null || saved === '') return null;
+  const seconds = Number(saved);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  return Math.min(seconds, Number(duration));
 }
 
 export function momentText(seconds) {

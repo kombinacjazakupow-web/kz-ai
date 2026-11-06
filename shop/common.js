@@ -116,10 +116,29 @@ export function hangerSrc(value) {
   return `${url.origin}${url.pathname}${url.search}`;
 }
 
+export function sameHangerFilm(kept, next) {
+  if (!kept || !next) return false;
+  const src = String(kept.src || '');
+  return src !== '' && src === String(next.src || '') && String(kept.code || '') === String(next.code || '');
+}
+
+export function playbackHeld(current, target) {
+  const at = Number(current);
+  const want = Number(target);
+  if (!Number.isFinite(at) || !Number.isFinite(want)) return false;
+  return Math.abs(at - want) < 0.05;
+}
+
 export function slidePlan(hasFilm, photoCount) {
   const photos = Math.max(0, Math.floor(Number(photoCount)) || 0);
   const total = (hasFilm ? 1 : 0) + photos;
   return { total, controls: total > 1 };
+}
+
+export function photosAfterPoster(photos, posterTaken) {
+  const list = Array.isArray(photos) ? photos : [];
+  if (posterTaken && list.length) return list.slice(1);
+  return list;
 }
 
 export function payPopup(order) {

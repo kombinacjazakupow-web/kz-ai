@@ -3,7 +3,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, esc, formatZl, formatWhen, photoUrl, normalizeList, splitList, facebookReel, facebookClip, hangerSrc,
   nextProductCode, ownerFlag, parseAdminRoute, sortProducts, ORDER_STATUS, STATUS_NEXT, STATUS_ACTION,
 } from '#common';
-import { momentText } from '#variants';
+import { momentReady, momentSliderValue, momentText } from '#variants';
 
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },
@@ -341,11 +341,11 @@ function momentsHtml(product, value) {
     <h2>Momenty kolorów</h2>
     <video id="moment-video" playsinline muted preload="metadata" src="${esc(src)}"></video>
     <label class="field" for="moment-range"><span>Moment w filmie</span>
-      <input id="moment-range" class="moment-range" type="range" min="0" max="0" step="0.1" value="0">
+      <input id="moment-range" class="moment-range" type="range" min="0" max="0" step="0.1" value="0" disabled>
     </label>
     <div class="chip-row">${chips}</div>
     ${tick}
-    <button type="button" class="btn primary" data-act="save-moment">Zapisz moment</button>
+    <button type="button" class="btn primary" id="save-moment" data-act="save-moment" disabled>Zapisz moment</button>
     ${uploads}
   </section>`;
 }
@@ -355,18 +355,21 @@ function bindMoments() {
   const range = document.getElementById('moment-range');
   if (!video || !range) return;
   const fit = () => {
-    if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+    if (!momentReady(video.duration)) return;
+    range.disabled = false;
     range.max = String(video.duration);
+    const save = document.getElementById('save-moment');
+    if (save) save.disabled = false;
     const picked = document.querySelector('[data-act="moment-color"].on');
-    if (!picked || picked.dataset.seconds === '') return;
-    const seconds = Number(picked.dataset.seconds);
-    if (!Number.isFinite(seconds) || seconds < 0) return;
-    range.value = String(Math.min(seconds, video.duration));
-    try { video.currentTime = Number(range.value); } catch { /* the film is not ready yet */ }
+    const at = momentSliderValue(picked?.dataset.seconds, video.duration);
+    if (at == null) return;
+    range.value = String(at);
+    try { video.currentTime = at; } catch { /* the film is not ready yet */ }
   };
   video.addEventListener('loadedmetadata', fit);
   if (video.readyState >= 1) fit();
   range.addEventListener('input', () => {
+    if (!momentReady(video.duration)) return;
     const at = Number(range.value);
     const apply = () => { try { video.currentTime = at; } catch { /* the film is not ready yet */ } };
     if (video.readyState >= 1) apply();
@@ -1000,15 +1003,12 @@ function onClick(event) {
       button.classList.toggle('on', on);
       button.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
-    if (target.dataset.seconds === '') return;
-    const at = Number(target.dataset.seconds);
     const video = document.getElementById('moment-video');
     const range = document.getElementById('moment-range');
-    if (!video || !range || !Number.isFinite(at)) return;
+    const at = momentSliderValue(target.dataset.seconds, video?.duration);
+    if (at == null || !video || !range) return;
     range.value = String(at);
-    const apply = () => { try { video.currentTime = at; } catch { /* the film is not ready yet */ } };
-    if (video.readyState >= 1) apply();
-    else video.addEventListener('loadedmetadata', apply, { once: true });
+    try { video.currentTime = at; } catch { /* the film is not ready yet */ }
     return;
   }
   if (act === 'save-moment') { saveMoment(); return; }
@@ -1025,12 +1025,14 @@ async function saveMoment() {
   const picked = document.querySelector('[data-act="moment-color"].on');
   const id = picked?.dataset.id || '';
   const range = document.getElementById('moment-range');
+  const video = document.getElementById('moment-video');
   const note = document.getElementById('moment-note');
   if (!id) {
     toast('Ten kolor nie ma jeszcze wariantu.');
     return;
   }
-  const at = Number(range?.value);
+  if (!range || range.disabled || !momentReady(video?.duration)) return;
+  const at = Number(range.value);
   if (!Number.isFinite(at) || at < 0) return;
   const { error } = await sb.from('shop_variants').update({ video_seconds: at }).eq('id', id);
   if (error) {

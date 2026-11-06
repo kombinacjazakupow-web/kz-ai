@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { facebookPlayer, facebookReel } from './common.js';
+import { facebookPlayer, facebookReel, photosAfterPoster } from './common.js';
 
 const reel = 'https://www.facebook.com/reel/1234567890';
 assert.equal(facebookReel(reel), reel);
@@ -24,6 +24,12 @@ const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
 assert.match(shop, /facebookReel\(product\.reel_url\)/);
 assert.match(shop, /data-act="reel-play"/);
 assert.match(shop, /hanger \|\| reel \? '' : videoSrc\(product\.video_url\)/);
+assert.deepEqual(photosAfterPoster(['a.jpg', 'b.jpg'], true), ['b.jpg']);
+assert.deepEqual(photosAfterPoster(['a.jpg'], true), []);
+assert.deepEqual(photosAfterPoster(['a.jpg', 'b.jpg'], false), ['a.jpg', 'b.jpg']);
+assert.deepEqual(photosAfterPoster([], true), []);
+assert.match(shop, /photosAfterPoster\(photos, posterTaken\)/);
+assert.match(shop, /slidePlan\(Boolean\(reel \|\| film\), galleryPhotos\.length\)/);
 assert.doesNotMatch(shop, /plugins\/video\.php/);
 
 console.log('reel-check ok');

@@ -3,7 +3,7 @@ import {
   SUPABASE_URL, SUPABASE_KEY, BASKET_KEY, DRAFT_KEY, THANKS_KEY, ORDERS_KEY,
   DELIVERY_LABEL, COD_NOTE, MESSENGER_LINE, BLIK_COPY, TRANSFER_COPY,
   LAUNCH_BANNER, PAY_WINDOW, PROOF_LABEL, PROOF_OK, PROOF_MAX_BYTES, LUCKY_LABEL,
-  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, hangerSrc, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket, FACEBOOK_LOGIN,
+  esc, formatZl, formatWhen, photoUrl, photoSrc, videoSrc, hangerSrc, sameHangerFilm, playbackHeld, photosAfterPoster, slidePlan, splitList, settleOption, chooseOption, parseRoute, sanitizeBasket, FACEBOOK_LOGIN,
   upsertLine, setLineQty, lineKey, previewTotals, validateCheckout, buildOrderPayload,
   clampBasket, proofKind, proofObjectPath, mapProofResult, pickSlogan, rememberOrder, orderAttemptKey, ORDER_UNSURE, refusedLine,
   mapOrderError, thanksLines, stockProblem, sortProducts, coerceOrder, normalizePostcode, normalizePhone, phoneOk, payPopup, facebookReel, facebookClip, facebookPlayer, soldShopLine,
@@ -77,11 +77,15 @@ const state = {
   metaCheckout: false,
   hangerMuted: true,
   modelHold: '',
-  hangerAt: null,
+  hangerSeek: null,
 };
 
 let accountGen = 0;
 let booted = false;
+let hangerBox = null;
+let hangerObserver = null;
+let hangerToken = 0;
+let hangerPark = null;
 
 function emptyDraft() {
   return {
@@ -249,6 +253,7 @@ function paint(opts = {}) {
   const y = opts.keep ? window.scrollY : 0;
   syncPromo();
   document.title = pageTitle();
+  stashHanger();
   root.innerHTML = shell();
   afterPaint();
   window.scrollTo(0, y);
@@ -408,17 +413,22 @@ function productMain(code) {
   const hanger = hangerSrc(product.hanger_video_url);
   const reel = hanger ? '' : facebookReel(product.reel_url);
   const film = hanger || reel ? '' : videoSrc(product.video_url);
+  const posterTaken = Boolean(reel && photos[0]);
+  const galleryPhotos = photosAfterPoster(photos, posterTaken);
   const filmSlide = reel
-    ? reelPoster(product, photos[0], reel)
+    ? reelPoster(product, posterTaken ? photos[0] : '', reel)
     : film
       ? `<video class="product-video" autoplay muted loop playsinline src="${esc(film)}"></video>`
       : '';
-  const realSlides = filmSlide + (photos.length
-    ? photos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
+  const realSlides = filmSlide + (galleryPhotos.length
+    ? galleryPhotos.map((path) => thumbHtml(path, product.title || 'Produkt', true, 800)).join('')
     : '');
   const slides = realSlides || (hanger ? '' : `<span class="ph">${esc(letter(product.title))}</span>`);
-  const plan = slidePlan(Boolean(reel || film), photos.length);
-  const labels = [...(reel || film ? ['Film'] : []), ...photos.map((_, i) => `Zdjęcie ${i + 1}`)];
+  const plan = slidePlan(Boolean(reel || film), galleryPhotos.length);
+  const labels = [
+    ...(reel || film ? ['Film'] : []),
+    ...galleryPhotos.map((_, i) => `Zdjęcie ${posterTaken ? i + 2 : i + 1}`),
+  ];
   const nav = plan.controls
     ? `<button type="button" class="gal-nav prev" data-act="gal" data-dir="-1" aria-label="Poprzednie zdjęcie">‹</button>
        <button type="button" class="gal-nav next" data-act="gal" data-dir="1" aria-label="Następne zdjęcie">›</button>`
@@ -1127,35 +1137,110 @@ function focusPayModal() {
   });
 }
 
-function watchHanger() {
-  const video = document.querySelector('.hanger-video');
+function stashHanger() {
+  const video = document.getElementById('app')?.querySelector('.hanger-video');
   if (!video) return;
-  video.muted = state.hangerMuted !== false;
-  seekHanger(video);
-  const play = () => video.play().catch(() => {});
-  if (typeof IntersectionObserver !== 'function') {
-    play();
+  if (hangerObserver) {
+    hangerObserver.disconnect();
+    hangerObserver = null;
+  }
+  hangerBox = {
+    node: video,
+    src: video.getAttribute('src') || '',
+    code: state.pick.code,
+    time: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+    playing: !video.paused && !video.ended,
+  };
+  if (!hangerPark) {
+    hangerPark = document.createElement('div');
+    hangerPark.hidden = true;
+    document.body.appendChild(hangerPark);
+  }
+  hangerPark.appendChild(video);
+}
+
+function watchHanger() {
+  if (hangerObserver) {
+    hangerObserver.disconnect();
+    hangerObserver = null;
+  }
+  const fresh = document.getElementById('app')?.querySelector('.hanger-video') || null;
+  const box = hangerBox;
+  hangerBox = null;
+  if (!fresh) {
+    box?.node?.remove();
     return;
   }
-  const observer = new IntersectionObserver((entries) => {
+  const next = { src: fresh.getAttribute('src') || '', code: state.pick.code };
+  let video = fresh;
+  let restored = null;
+  if (box && sameHangerFilm(box, next)) {
+    fresh.replaceWith(box.node);
+    video = box.node;
+    restored = box;
+  } else box?.node?.remove();
+  video.muted = state.hangerMuted !== false;
+  if (state.hangerSeek != null) seekHangerTo(video, state.hangerSeek);
+  else if (!restored) seekChosenMoment(video);
+  else resumeHanger(video, restored);
+  if (typeof IntersectionObserver !== 'function') {
+    if (!restored || restored.playing || state.hangerSeek != null) video.play().catch(() => {});
+    return;
+  }
+  hangerObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) entry.target.play().catch(() => {});
       else entry.target.pause();
     }
   }, { threshold: [0, 0.6, 1] });
-  observer.observe(video);
+  hangerObserver.observe(video);
 }
 
-function seekHanger(video) {
+function seekChosenMoment(video) {
   const route = parseRoute(location.hash);
   const product = route.name === 'product' ? findProduct(route.code) : null;
   if (!product) return;
   const seconds = colorMoment(product, state.pick.color, state.variants);
-  const at = seconds == null ? state.hangerAt : seconds;
-  if (at == null || !Number.isFinite(Number(at))) return;
+  if (seconds == null) return;
+  state.hangerSeek = seconds;
+  seekHangerTo(video, seconds);
+}
+
+function seekHangerTo(video, seconds) {
+  const target = Number(seconds);
+  if (!Number.isFinite(target) || target < 0) return;
+  const token = ++hangerToken;
   const apply = () => {
-    try { video.currentTime = Number(at); } catch { /* the film is not ready yet */ }
+    if (token !== hangerToken) return;
+    try { video.currentTime = target; } catch { /* the film is not ready yet */ }
     video.play().catch(() => {});
+    if (playbackHeld(video.currentTime, target)) {
+      state.hangerSeek = null;
+      return;
+    }
+    const onSeeked = () => {
+      if (token !== hangerToken) {
+        video.removeEventListener('seeked', onSeeked);
+        return;
+      }
+      if (!playbackHeld(video.currentTime, target)) return;
+      video.removeEventListener('seeked', onSeeked);
+      state.hangerSeek = null;
+    };
+    video.addEventListener('seeked', onSeeked);
+  };
+  if (video.readyState >= 1) apply();
+  else video.addEventListener('loadedmetadata', apply, { once: true });
+}
+
+function resumeHanger(video, box) {
+  const token = ++hangerToken;
+  const apply = () => {
+    if (token !== hangerToken) return;
+    if (Number.isFinite(box.time) && !playbackHeld(video.currentTime, box.time)) {
+      try { video.currentTime = box.time; } catch { /* the film is not ready yet */ }
+    }
+    if (box.playing) video.play().catch(() => {});
   };
   if (video.readyState >= 1) apply();
   else video.addEventListener('loadedmetadata', apply, { once: true });
@@ -1310,7 +1395,7 @@ function syncPick(product) {
   if (state.pick.code !== String(product.code)) {
     state.pick = { code: String(product.code), size: '', color: '', qty: 1 };
     state.modelHold = '';
-    state.hangerAt = null;
+    state.hangerSeek = null;
   }
   state.pick.size = settleOption(sizes, state.pick.size);
   state.pick.color = settleOption(available, state.pick.color);
@@ -1436,11 +1521,13 @@ function onClick(event) {
     const chosen = chooseOption(state.pick[kind], target.dataset.val || '', options);
     if (kind === 'size') state.pick.size = chosen;
     else {
-      const video = document.querySelector('.hanger-video');
       const seconds = colorMoment(product, chosen, state.variants);
-      if (seconds == null) {
-        if (video && Number.isFinite(video.currentTime)) state.hangerAt = video.currentTime;
-      } else state.hangerAt = seconds;
+      state.hangerSeek = seconds == null ? null : seconds;
+      const video = document.querySelector('.hanger-video');
+      if (video && seconds != null && video.readyState >= 1) {
+        try { video.currentTime = seconds; } catch { /* the film is not ready yet */ }
+        video.play().catch(() => {});
+      }
       state.pick.color = chosen;
       paint({ keep: true });
       return;
@@ -1766,7 +1853,7 @@ function noteCommerce() {
       trackMeta('InitiateCheckout', {
         content_ids: open.map((line) => String(line.code || '')).filter(Boolean),
         content_type: 'product',
-        value: totals.total,
+        value: totals.preview,
         currency: 'PLN',
       });
     }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { META_PIXEL_ID, metaOn, metaPayload, metaPurchase } from './common.js';
+import { META_PIXEL_ID, metaOn, metaPayload, metaPurchase, previewTotals } from './common.js';
 
 assert.equal(META_PIXEL_ID, '');
 assert.equal(metaOn(''), false);
@@ -30,6 +30,10 @@ assert.match(shop, /if \(!metaOn\(\) \|\| metaChoice\(\) !== 'yes'\) return;/);
 assert.match(shop, /trackMeta\('ViewContent'/);
 assert.match(shop, /trackMeta\('AddToCart'/);
 assert.match(shop, /trackMeta\('InitiateCheckout'/);
+assert.match(shop, /value: totals\.preview/);
+assert.doesNotMatch(shop, /totals\.total/);
+assert.equal(previewTotals([{ price: 70, qty: 1 }]).preview, 95);
+assert.equal(previewTotals([{ price: 70, qty: 1 }]).total, undefined);
 assert.match(shop, /metaPurchase\(body\.to_pay_now, body\.order_no\)/);
 
 console.log('meta-check ok');
