@@ -52,6 +52,7 @@ export function colorMoment(product, color, variants) {
 }
 
 export function momentText(seconds) {
+  if (seconds == null || seconds === '') return '';
   const n = Number(seconds);
   if (!Number.isFinite(n) || n < 0) return '';
   const whole = Math.floor(n);
