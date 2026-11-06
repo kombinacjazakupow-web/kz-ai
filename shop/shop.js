@@ -925,18 +925,20 @@ async function logout() {
 }
 
 function ordersMain() {
-  const cards = state.mine.map((order) => `<article class="order">
+  const cards = state.mine.filter((order) => Number.isFinite(Number(order.to_pay_now))).map((order) => {
+    const rows = thanksLines(order).map((line, index) => {
+      const copy = copyValue(line, order, index);
+      return `<div class="copyline"><p>${esc(line)}</p><button type="button" class="btn ghost" data-act="copy" data-copy="${esc(copy)}">Kopiuj</button></div>`;
+    }).join('');
+    return `<article class="order">
       <header><strong class="price">${esc(order.order_no)}</strong></header>
+      <div class="paybox">${rows}</div>
       ${proofBox(order.order_no, order.phone)}
-    </article>`).join('');
+    </article>`;
+  }).join('');
   return `<main>
     <h1>Moje zamówienia</h1>
-    <p class="hint">Numer i telefon zostają w tym telefonie, żeby dołączyć potwierdzenie.</p>
-    <form id="find-order">
-      ${field('find-no', 'Numer zamówienia', '', 'text', '', 'autocapitalize="characters" spellcheck="false" maxlength="20"')}
-      ${field('find-phone', 'Telefon', '', 'tel', '', 'inputmode="tel" autocomplete="tel"')}
-      <button type="submit" class="btn">Pokaż zamówienie</button>
-    </form>
+    <p class="hint">Kwota i dane do przelewu zostają w tym telefonie razem z zamówieniem złożonym tutaj.</p>
     ${cards || '<p>Nie ma tu jeszcze zamówień z tego telefonu.</p>'}
   </main>`;
 }
@@ -1295,20 +1297,6 @@ function onSubmit(event) {
   if (form.id === 'claim-order') {
     event.preventDefault();
     claimOrders(form);
-    return;
-  }
-  if (form.id === 'find-order') {
-    event.preventDefault();
-    const orderNo = String(form.elements.namedItem('find-no')?.value || '').trim();
-    const phone = String(form.elements.namedItem('find-phone')?.value || '');
-    if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(orderNo) || !phoneOk(phone)) {
-      toast('Podaj numer zamówienia i telefon — 9 cyfr.');
-      return;
-    }
-    state.mine = rememberOrder(state.mine, { order_no: orderNo, phone, at: new Date().toISOString() });
-    writeJson(ORDERS_KEY, state.mine);
-    form.reset();
-    paint({ keep: true });
     return;
   }
   if (form.id !== 'checkout') return;

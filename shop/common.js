@@ -166,7 +166,16 @@ export function rememberOrder(list, order) {
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,19}$/.test(orderNo)) return Array.isArray(list) ? list.slice(0, 20) : [];
   const phone = normalizePhone(order?.phone || '');
   const next = (Array.isArray(list) ? list : []).filter((row) => row?.order_no !== orderNo);
-  next.unshift({ order_no: orderNo, phone, at: String(order?.at || '') });
+  const row = { order_no: orderNo, phone, at: String(order?.at || '') };
+  const due = Number(order?.to_pay_now);
+  if (Number.isFinite(due)) {
+    row.to_pay_now = due;
+    row.payment = String(order?.payment || '');
+    row.cod_amount = Number(order?.cod_amount) || 0;
+    row.products_total = Number(order?.products_total) || 0;
+    row.delivery_fee = Number(order?.delivery_fee) || 0;
+  }
+  next.unshift(row);
   return next.slice(0, 20);
 }
 

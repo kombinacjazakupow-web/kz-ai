@@ -44,6 +44,13 @@ assert.equal(kept[0].phone, '796669157');
 const newer = rememberOrder(kept, { order_no: 'KS1030', phone: '500600700' });
 const replayed = newer.slice().reverse().reduce((list, row) => rememberOrder(list, row), []);
 assert.deepEqual(replayed.map((row) => row.order_no), ['KS1030', 'KS1029']);
+assert.equal(kept[0].to_pay_now, undefined);
+const paid = rememberOrder([], { order_no: 'KS1040', phone: '500600700', to_pay_now: 94, payment: 'blik', cod_amount: 0, products_total: 69, delivery_fee: 25 });
+assert.equal(paid[0].to_pay_now, 94);
+assert.equal(paid[0].payment, 'blik');
+assert.equal(paid[0].delivery_fee, 25);
+const paidAgain = rememberOrder(paid, paid[0]);
+assert.equal(paidAgain[0].to_pay_now, 94);
 
 const attempt = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 assert.equal(orderAttemptKey(attempt, () => 'fresh'), attempt);
