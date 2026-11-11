@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>SENSE · KOMBI</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--ink:#1c1c1a;--mut:#66665f;--line:#deded8;--red:#b3261e;--redbg:#fde8e6;--ok:#1e7a3c;--warn:#a85d00;--blue:#1d5fb3;--btn:#1c1c1a;--btnink:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#161615;--card:#21211f;--ink:#f1f1ec;--mut:#a8a89f;--line:#3a3a36;--red:#ff8a80;--redbg:#3a1d1a;--ok:#7fd69a;--warn:#ffb74d;--blue:#8ab4f8;--btn:#f1f1ec;--btnink:#161615}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:20px 0 6px}.mut{color:var(--mut);font-size:14px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}
+.pilne{display:block;width:100%;padding:18px;border:0;border-radius:12px;background:var(--red);color:#fff;font:700 22px system-ui,sans-serif}
+.row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer}.row button{padding:10px 14px;border-radius:8px;border:0;background:var(--btn);color:var(--btnink);min-width:88px}
+.row button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row button.yes{background:var(--ok);color:#fff}.row button.no{background:var(--red);color:#fff}
+button:disabled{opacity:.5}
+input,textarea{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);margin-top:6px}
+textarea{min-height:60px}label.ck{display:inline-flex;gap:4px;align-items:center;margin:6px 10px 0 0;font-size:14px}label.ck input{width:auto;margin:0}
+.txt{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0;font-size:15px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--mut)}
+.s-acting{background:var(--blue)}.s-waiting_yes{background:var(--warn)}.s-stuck{background:var(--red)}.s-paused{background:var(--warn)}
+dl{display:grid;grid-template-columns:70px 1fr;gap:2px 8px;margin:6px 0 0;font-size:14px}dt{color:var(--mut)}dd{margin:0;overflow-wrap:anywhere}
+.feed{list-style:none;padding:0;margin:0}.feed li{padding:6px 0;border-bottom:1px solid var(--line);font-size:14px;overflow-wrap:anywhere}
+.p0{color:var(--red);font-weight:600}.urg{border-color:var(--red);background:var(--redbg)}
+.warn{color:var(--warn)}.ok{color:var(--ok)}.badge{font-size:13px;color:var(--mut)}
+#conn{font-size:13px}
+</style>
+</head>
+<body>
+<main id="app"><p>Ładowanie…</p></main>
+<script type="module">
+// Same client + login as skrzynka.html (publishable key from common.js, owner check via pak_is_owner).
+// This page NEVER sends anything to clients and never touches Selmo, DPD or money.
+// It only inserts rows (PILNE, LIVE START/KONIEC) and writes TAK/NIE on an approval row.
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { SUPABASE_URL, SUPABASE_KEY, esc } from './common.js';
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true } });
+const app = document.getElementById('app');
+const S = { events: [], workers: [], approvals: [], urgent: [], conn: 'łączenie…', urgentOpen: false };
+const LANES = [['L1','Wiadomości'],['L2','Zamówienia / live'],['L3','Pieniądze'],['L4','Wysyłka'],['L5','Strona / app'],['L6','Zdjęcia']];
+const STATE_PL = { sensing: 'czeka', acting: 'pracuje', waiting_yes: 'czeka na TAK', stuck: 'utknął', paused: 'pauza', off: 'wyłączony' };
+const hm = (t) => t ? new Date(t).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const ago = (t) => { if (!t) return 'nigdy'; const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? 'teraz' : m < 60 ? `${m} min temu` : m < 1440 ? `${Math.round(m / 60)} h temu` : `${Math.round(m / 1440)} dni temu`; };
+
+function login(msg) {
+  app.innerHTML = `<h1>SENSE</h1><p class="mut">${esc(msg || 'Najpierw zaloguj się na stronie admina, potem wróć tutaj.')}</p><p><a style="display:inline-block;padding:8px 12px;border-radius:8px;background:var(--btn);color:var(--btnink);text-decoration:none" href="admin.html">Otwórz stronę admina</a></p>`;
+}
+
+function paint() {
+  const keep = { y: window.scrollY, what: document.getElementById('u-what')?.value, who: document.getElementById('u-who')?.value,
+    lanes: [...document.querySelectorAll('[name=lane]:checked')].map((x) => x.value) };
+  const now = Date.now();
+  const open = S.approvals.filter((a) => a.status === 'open' && new Date(a.expires_at) > now).slice(0, 5);
+  const waiting = S.approvals.filter((a) => a.status === 'open' && new Date(a.expires_at) > now).length;
+  const urg = S.urgent.filter((u) => u.status !== 'closed');
+  const workers = S.workers.filter((w) => w.kind === 'worker');
+  const sources = S.workers.filter((w) => w.kind === 'source');
+  const liveOn = (() => { const l = S.events.find((e) => e.type === 'live.start' || e.type === 'live.end'); return l && l.type === 'live.start'; })();
+
+  app.innerHTML = `<h1>SENSE</h1><p class="mut">Tu nic się nie wysyła. Przyciski tylko zapisują Twoją decyzję. <span id="conn">${esc(S.conn)}</span></p>
+
+  <button class="pilne" data-a="urgent-toggle">🚨 PILNE</button>
+  ${S.urgentOpen ? `<div class="c urg">
+    <input id="u-who" placeholder="Kto? (klientka / nr zamówienia)" maxlength="120">
+    <textarea id="u-what" placeholder="Co się stało? (jedno zdanie)" maxlength="1000"></textarea>
+    <div>${LANES.map(([k, l]) => `<label class="ck"><input type="checkbox" name="lane" value="${k}">${esc(l)}</label>`).join('')}</div>
+    <div class="row"><button class="no" data-a="urgent-send">Zapisz PILNE</button><button class="alt" data-a="urgent-toggle">Anuluj</button></div>
+  </div>` : ''}
+  ${urg.map((u) => `<div class="c urg" data-uid="${esc(u.id)}"><b>PILNE · ${esc(u.who || '')}</b> <span class="badge">${esc(hm(u.created_at))} · ${u.status === 'working' ? 'w pracy' : 'otwarte'}</span>
+    <div>${esc(u.what)}</div><div class="row"><button class="alt" data-a="urgent-close">OK, załatwione</button></div></div>`).join('')}
+
+  <h2>Czeka na Twoje TAK (${waiting})</h2>
+  ${open.length ? open.map((a) => `<div class="c" data-aid="${esc(a.id)}">
+    <b>${esc(a.title)}</b>
+    <dl><dt>Kto</dt><dd>${esc(a.who || '—')}</dd><dt>Kwota</dt><dd>${a.amount_pln != null ? esc(Number(a.amount_pln).toFixed(2)) + ' zł' : '—'}</dd>
+    <dt>Od</dt><dd>${esc(a.worker)} · ${esc(hm(a.created_at))}</dd><dt>Ważne do</dt><dd>${esc(hm(a.expires_at))}</dd></dl>
+    ${a.exact_text ? `<div class="txt">${esc(a.exact_text)}</div>` : ''}
+    <div class="row"><button class="yes" data-a="yes">TAK</button><button class="no" data-a="no">NIE</button></div>
+    <p class="mut">TAK tylko zapisuje decyzję. Wysyła dopiero Claude, przez send guard.</p>
+  </div>`).join('') : '<p class="mut">Nic nie czeka.</p>'}
+
+  <h2>Live</h2>
+  <div class="c"><div>Teraz: <b>${liveOn ? '🔴 LIVE trwa' : 'brak live'}</b></div>
+    <div class="row"><button data-a="live.start" ${liveOn ? 'disabled' : ''}>LIVE START</button><button class="alt" data-a="live.end" ${liveOn ? '' : 'disabled'}>LIVE KONIEC</button></div></div>
+
+  <h2>Kto co robi</h2>
+  ${workers.map((w) => `<div class="c"><b><span class="dot s-${esc(w.state)}"></span>${esc(w.label)}</b> <span class="badge">${esc(STATE_PL[w.state] || w.state)} · ${esc(ago(w.updated_at))}</span>
+    <dl><dt>Zrobione</dt><dd>${esc(w.did || '—')}${w.did_at ? ` <span class="badge">${esc(hm(w.did_at))}</span>` : ''}</dd>
+    <dt>Teraz</dt><dd>${esc(w.doing || '—')}${w.doing_since ? ` <span class="badge">od ${esc(hm(w.doing_since))}</span>` : ''}</dd>
+    <dt>Dalej</dt><dd>${esc(w.next || '—')}</dd></dl></div>`).join('') || '<p class="mut">Brak danych.</p>'}
+
+  <h2>Źródła</h2>
+  <div class="c"><ul class="feed">${sources.map((s) => {
+    const last = s.last_event_at || s.updated_at; const stale = !last || (now - new Date(last)) / 60000 > s.stale_after_min;
+    return `<li><span class="${stale ? 'warn' : 'ok'}">${stale ? '⚠' : '✅'}</span> ${esc(s.label)} · ostatnio ${esc(ago(last))}${s.note ? ` · ${esc(s.note)}` : ''}</li>`; }).join('') || '<li class="mut">Brak danych.</li>'}</ul></div>
+
+  <h2>Co się dzieje</h2>
+  <div class="c"><ul class="feed">${S.events.slice(0, 30).map((e) => `<li class="${e.priority === 0 ? 'p0' : ''}">${esc(hm(e.created_at))} · ${esc(e.type)}${e.title ? ' – ' + esc(e.title) : ''} <span class="badge">${esc(e.source)}${e.lane ? ' → ' + esc(e.lane) : ''} · ${esc(e.status)}</span></li>`).join('') || '<li class="mut">Cisza.</li>'}</ul></div>`;
+
+  if (S.urgentOpen) {
+    if (keep.who) document.getElementById('u-who').value = keep.who;
+    if (keep.what) document.getElementById('u-what').value = keep.what;
+    keep.lanes.forEach((v) => { const x = document.querySelector(`[name=lane][value="${v}"]`); if (x) x.checked = true; });
+  }
+  window.scrollTo(0, keep.y);
+}
+
+async function loadAll() {
+  const [ev, wk, ap, ur] = await Promise.all([
+    sb.from('sense_events').select('*').order('id', { ascending: false }).limit(50),
+    sb.from('worker_status').select('*').order('sort'),
+    sb.from('approvals').select('*').eq('status', 'open').order('created_at', { ascending: true }).limit(50),
+    sb.from('urgent_cases').select('*').neq('status', 'closed').order('id', { ascending: false }).limit(20),
+  ]);
+  if (ev.error || wk.error || ap.error || ur.error) { app.innerHTML = '<h1>SENSE</h1><p>Nie udało się wczytać. Odśwież stronę.</p>'; return false; }
+  S.events = ev.data; S.workers = wk.data; S.approvals = ap.data; S.urgent = ur.data; paint(); return true;
+}
+
+// Realtime: merge one changed row into the list, no polling.
+function merge(list, row, key, max) {
+  const i = list.findIndex((r) => r[key] === row[key]);
+  if (i >= 0) list[i] = row; else list.unshift(row);
+  if (max && list.length > max) list.length = max;
+}
+function subscribe() {
+  sb.channel('sense-page')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sense_events' }, (p) => { merge(S.events, p.new, 'id', 50); paint(); })
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sense_events' }, (p) => { merge(S.events, p.new, 'id', 50); paint(); })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_status' }, (p) => { if (p.new?.worker) { merge(S.workers, p.new, 'worker'); S.workers.sort((a, b) => a.sort - b.sort); paint(); } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'approvals' }, (p) => { if (p.new?.id) { merge(S.approvals, p.new, 'id'); paint(); } })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'urgent_cases' }, (p) => { if (p.new?.id) { merge(S.urgent, p.new, 'id'); paint(); } })
+    .subscribe((status) => {
+      S.conn = status === 'SUBSCRIBED' ? '● na żywo' : status === 'CLOSED' ? '○ rozłączono' : '○ łączenie…';
+      const el = document.getElementById('conn'); if (el) el.textContent = S.conn;
+      if (status === 'SUBSCRIBED') loadAll(); // fill anything missed while disconnected (one read per reconnect)
+    });
+}
+// back from background on the phone: one fresh read (not a timer)
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') loadAll(); });
+
+app.addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const a = b.dataset.a;
+  if (a === 'urgent-toggle') { S.urgentOpen = !S.urgentOpen; return paint(); }
+
+  if (a === 'urgent-send') {
+    const what = document.getElementById('u-what').value.trim(); const who = document.getElementById('u-who').value.trim();
+    const lanes = [...document.querySelectorAll('[name=lane]:checked')].map((x) => x.value);
+    if (what.length < 2) { alert('Napisz jedno zdanie: co się stało.'); return; }
+    b.disabled = true;
+    const { error } = await sb.from('urgent_cases').insert({ who: who || null, what, lanes });
+    if (error) { b.disabled = false; b.textContent = 'Błąd, spróbuj jeszcze raz'; return; }
+    S.urgentOpen = false; paint(); return;
+  }
+  if (a === 'urgent-close') {
+    const id = Number(b.closest('[data-uid]').dataset.uid);
+    if (!confirm('Zamknąć tę PILNĄ sprawę?')) return;
+    b.disabled = true;
+    const { error } = await sb.from('urgent_cases').update({ status: 'closed' }).eq('id', id).select('id');
+    if (error) { b.disabled = false; b.textContent = 'Błąd, spróbuj jeszcze raz'; }
+    return;
+  }
+  if (a === 'yes' || a === 'no') {
+    const id = b.closest('[data-aid]').dataset.aid; const row = S.approvals.find((r) => r.id === id);
+    if (!confirm(`${a === 'yes' ? 'TAK' : 'NIE'} dla: ${row?.title || ''}?\n(To tylko zapisuje decyzję. Nic nie zostaje wysłane z tej strony.)`)) return;
+    b.disabled = true;
+    const { data, error } = await sb.from('approvals').update({ status: a }).eq('id', id).eq('status', 'open').select('id,status');
+    if (error || !data?.length) { b.disabled = false; b.textContent = 'Nie zapisano (wygasło?)'; return; }
+    merge(S.approvals, { ...row, status: a }, 'id'); paint(); return;
+  }
+  if (a === 'live.start' || a === 'live.end') {
+    if (!confirm(a === 'live.start' ? 'Zaczynamy LIVE?' : 'Kończymy LIVE?')) return;
+    b.disabled = true;
+    const { error } = await sb.from('sense_events').insert({ type: a, title: a === 'live.start' ? 'LIVE START' : 'LIVE KONIEC', payload: {} });
+    if (error) { b.disabled = false; b.textContent = 'Błąd, spróbuj jeszcze raz'; }
+  }
+});
+
+const { data: { session } } = await sb.auth.getSession();
+if (!session) login();
+else {
+  const { data: owner, error } = await sb.rpc('pak_is_owner');
+  if (error || !owner) login('To konto nie ma dostępu.');
+  else if (await loadAll()) subscribe();
+}
+</script>
+</body>
+</html>
