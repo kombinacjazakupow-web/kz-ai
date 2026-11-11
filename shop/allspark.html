@@ -54,7 +54,7 @@ import { SUPABASE_URL, SUPABASE_KEY, esc } from './common.js';
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true } });
 const app = document.getElementById('app');
 const SHORT = "KOMBI ALIVE (Kombinacja Zakupów, owner Sergio). You are a worker in a living system. Cycle: SENSE (wait, do nothing) → ACT (only your lane) → REPORT → SENSE. Sergio's 🚨 urgent case beats everything.\nLanes: Claude = client messages, Selmo, money, shipping. Grok = website/app (Base44). ChatGPT = product photos/videos. Never do another lane's job.\nOnly Sergio's YES unlocks: messages to clients, publishing, money/prices, cancels, settings, client data. Everything else: just do it.\nNever invent prices, stock, sizes, fabric. Photos/videos must show the REAL item exactly (AI model: no AI label, clothes 100% identical). Payment only przelew/BLIK, no pobranie. Client texts: Polish, short, start \"iFevzi:\", no apologies/promises.\nTest your work yourself before Sergio sees it. Be honest: if stuck, say so.\nEND EVERY ANSWER WITH:\nALIVE-REPORT\nworker: <your name>\nstate: sensing|acting|waiting_yes|stuck\ndid: <1 line>\ndoing: <1 line or ->\nnext: <1 line or ->\nneeds-yes: <exact thing or ->\n";
-const ICON = { claude: '🧠', grok: '🛠️', chatgpt: '📸', boty: '🤖' };
+const ICON = { claude: '🧠', grok: '🛠️', chatgpt: '📸', boty: '🤖', perplexity: '🔎' };
 const STATE_PL = { sensing: 'śpi i nasłuchuje', acting: 'działa', waiting_yes: 'czeka na TAK', stuck: 'utknął', paused: 'pauza', off: 'wyłączony' };
 let workers = [], sparked = null;
 
