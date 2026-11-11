@@ -55,7 +55,7 @@ const ago = (t) => { if (!t) return 'nigdy'; const m = Math.round((Date.now() - 
 
 function login(msg) {
   app.innerHTML = `<div class="center" style="padding-top:8px"><div class="hero-g"><div class="mark" style="width:88px;height:88px;font-size:32px">KS</div><h1>KOMBI SENSE</h1></div>
-    <p>${esc(msg || 'Panel właściciela.')}</p>
+    <p>${esc(msg || 'Panel właściciela.')}</p>${(navigator.standalone || matchMedia('(display-mode: standalone)').matches) ? '<p class="mut">Ikona z ekranu początkowego ma osobne logowanie. Zaloguj się tutaj raz – albo otwórz kombinacjazakupow.pl/shop/sense.html w Safari.</p>' : ''}
     <button type="button" id="google" class="btn primary" style="width:100%">Zaloguj przez Google</button>
     <p><a class="back" href="./">← Sklep</a></p></div>`;
   document.getElementById('google').onclick = async (e) => {
@@ -74,7 +74,7 @@ function paint() {
   const urg = S.urgent.filter((u) => u.status !== 'closed');
   const workers = S.workers.filter((w) => w.kind === 'worker');
   const sources = S.workers.filter((w) => w.kind === 'source');
-  const liveOn = (() => { const l = S.events.find((e) => e.type === 'live.start' || e.type === 'live.end'); return l && l.type === 'live.start'; })();
+  const liveOn = S.lastLive === 'live.start';
 
   app.innerHTML = `<div class="hero-g"><div class="top"><div class="mark">KS</div><h1>KOMBI SENSE</h1></div></div><p class="mut">Tu nic się nie wysyła. Przyciski tylko zapisują Twoją decyzję. <span id="conn">${esc(S.conn)}</span></p>
 
@@ -125,11 +125,12 @@ function paint() {
 }
 
 async function loadAll() {
-  const [ev, wk, ap, ur] = await Promise.all([
+  const [ev, wk, ap, ur, lv2] = await Promise.all([
     sb.from('sense_events').select('*').order('id', { ascending: false }).limit(50),
     sb.from('worker_status').select('*').order('sort'),
     sb.from('approvals').select('*').eq('status', 'open').order('created_at', { ascending: true }).limit(50),
     sb.from('urgent_cases').select('*').neq('status', 'closed').order('id', { ascending: false }).limit(20),
+    sb.from('sense_events').select('id,type').in('type', ['live.start', 'live.end']).order('id', { ascending: false }).limit(1),
   ]);
   const err = ev.error || wk.error || ap.error || ur.error;
   if (err) {
@@ -138,7 +139,7 @@ async function loadAll() {
     else app.innerHTML = '<div class="hero-g"><div class="top"><div class="mark">KS</div><h1>KOMBI SENSE</h1></div></div><p>Nie udało się wczytać. Odśwież stronę.</p><p class="mut">' + esc(err.message || '') + '</p>';
     return false;
   }
-  S.events = ev.data; S.workers = wk.data; S.approvals = ap.data; S.urgent = ur.data; paint(); return true;
+  S.events = ev.data; S.workers = wk.data; S.approvals = ap.data; S.urgent = ur.data; S.lastLive = (lv2.data && lv2.data[0]) ? lv2.data[0].type : null; paint(); return true;
 }
 
 // Realtime: merge one changed row into the list, no polling.
@@ -149,7 +150,7 @@ function merge(list, row, key, max) {
 }
 function subscribe() {
   sb.channel('sense-page')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sense_events' }, (p) => { merge(S.events, p.new, 'id', 50); paint(); })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'sense_events' }, (p) => { merge(S.events, p.new, 'id', 50); if (p.new.type === 'live.start' || p.new.type === 'live.end') S.lastLive = p.new.type; paint(); })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sense_events' }, (p) => { merge(S.events, p.new, 'id', 50); paint(); })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'worker_status' }, (p) => { if (p.new?.worker) { merge(S.workers, p.new, 'worker'); S.workers.sort((a, b) => a.sort - b.sort); paint(); } })
     .on('postgres_changes', { event: '*', schema: 'public', table: 'approvals' }, (p) => { if (p.new?.id) { merge(S.approvals, p.new, 'id'); paint(); } })
@@ -175,7 +176,7 @@ app.addEventListener('click', async (e) => {
     b.disabled = true;
     const { error } = await sb.from('urgent_cases').insert({ who: who || null, what, lanes });
     if (error) { b.disabled = false; b.textContent = 'Błąd, spróbuj jeszcze raz'; return; }
-    S.urgentOpen = false; paint(); return;
+    S.urgentOpen = false; await loadAll(); return;
   }
   if (a === 'urgent-close') {
     const id = Number(b.closest('[data-uid]').dataset.uid);
@@ -197,7 +198,7 @@ app.addEventListener('click', async (e) => {
     if (!confirm(a === 'live.start' ? 'Zaczynamy LIVE?' : 'Kończymy LIVE?')) return;
     b.disabled = true;
     const { error } = await sb.from('sense_events').insert({ type: a, title: a === 'live.start' ? 'LIVE START' : 'LIVE KONIEC', payload: {} });
-    if (error) { b.disabled = false; b.textContent = 'Błąd, spróbuj jeszcze raz'; }
+    if (error) { b.disabled = false; b.textContent = 'Błąd, spróbuj jeszcze raz'; } else await loadAll();
   }
 });
 
