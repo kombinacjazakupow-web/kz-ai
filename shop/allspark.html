@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#07060a">
+<title>ALLSPARK · KOMBI</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{--bg:#07060a;--ink:#f3eee6;--mut:#a59d92;--line:#2a2530;--card:#121018;--act:#5ad7ff;--yes:#ffb74d;--stuck:#ff6b81;--sleep:#55505c}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 Inter,system-ui,-apple-system,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px 16px 40px}
+h1{font-family:"Iowan Old Style",Palatino,Georgia,serif;font-weight:400;font-size:38px;margin:6px 0 2px;letter-spacing:.06em}
+h2{font-family:"Iowan Old Style",Palatino,Georgia,serif;font-weight:400;font-size:24px;margin:26px 0 8px}
+.mut{color:var(--mut);font-size:14px}
+.stage{position:relative;height:380px;margin:8px 0 4px;perspective:900px;overflow:hidden}
+.cube{position:absolute;left:50%;top:190px;width:110px;height:110px;margin:-55px 0 0 -55px;transform-style:preserve-3d;animation:spin 14s linear infinite}
+.cube div{position:absolute;inset:0;border:1px solid rgba(90,215,255,.7);background:linear-gradient(135deg,rgba(90,215,255,.18),rgba(201,162,39,.12));box-shadow:0 0 28px rgba(90,215,255,.45) inset}
+.cube .f1{transform:translateZ(55px)}.cube .f2{transform:rotateY(180deg) translateZ(55px)}.cube .f3{transform:rotateY(90deg) translateZ(55px)}
+.cube .f4{transform:rotateY(-90deg) translateZ(55px)}.cube .f5{transform:rotateX(90deg) translateZ(55px)}.cube .f6{transform:rotateX(-90deg) translateZ(55px)}
+.cube div::after{content:"";position:absolute;inset:18%;border:1px solid rgba(201,162,39,.55);background:repeating-linear-gradient(90deg,transparent 0 9px,rgba(90,215,255,.25) 9px 10px)}
+.glow{position:absolute;left:50%;top:190px;width:240px;height:240px;margin:-120px 0 0 -120px;border-radius:50%;background:radial-gradient(circle,rgba(90,215,255,.35),transparent 65%);animation:pulse 3s ease-in-out infinite}
+.stage.burst .glow{animation:burst 1.2s ease-out}
+@keyframes spin{from{transform:rotateX(-22deg) rotateY(0)}to{transform:rotateX(-22deg) rotateY(360deg)}}
+@keyframes pulse{0%,100%{opacity:.55;transform:scale(.95)}50%{opacity:1;transform:scale(1.05)}}
+@keyframes burst{0%{opacity:1;transform:scale(.8)}60%{opacity:1;transform:scale(1.9)}100%{opacity:.6;transform:scale(1)}}
+.node{position:absolute;width:96px;margin-left:-48px;text-align:center;font-size:12px;line-height:1.25}
+.node .dot{width:46px;height:46px;margin:0 auto 4px;border-radius:50%;display:grid;place-items:center;font-size:20px;background:var(--card);border:2px solid var(--sleep)}
+.node.acting .dot{border-color:var(--act);box-shadow:0 0 18px var(--act);animation:pulse 1.4s infinite}
+.node.waiting_yes .dot{border-color:var(--yes);box-shadow:0 0 14px var(--yes)}
+.node.stuck .dot{border-color:var(--stuck);box-shadow:0 0 14px var(--stuck)}
+.node b{display:block;font-weight:600}.node span{color:var(--mut)}
+.c{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:10px 0}
+label{display:block;font-size:14px;color:var(--mut);margin-top:10px}
+input,select,textarea{width:100%;font:inherit;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:12px;background:#0d0b11;color:var(--ink);margin-top:4px}
+textarea{min-height:200px;font-size:13px}
+.btn{display:inline-block;width:100%;margin-top:12px;padding:14px;border:0;border-radius:999px;font:600 17px Inter,system-ui,sans-serif;cursor:pointer;background:linear-gradient(90deg,#2aa7d6,#5ad7ff);color:#04131a}
+.btn.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:8px}.row .btn{flex:1}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);justify-content:center}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:middle}
+.err{color:var(--stuck)}
+</style>
+</head>
+<body>
+<main id="app"><p>Ładowanie…</p></main>
+<script type="module">
+// ALLSPARK: shows the living team around the cube and "sparks" new workers (own key + install text).
+// Sends nothing to clients. Owner only (Supabase RLS + pak_is_owner).
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { SUPABASE_URL, SUPABASE_KEY, esc } from './common.js';
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true } });
+const app = document.getElementById('app');
+const SHORT = "KOMBI ALIVE (Kombinacja Zakupów, owner Sergio). You are a worker in a living system. Cycle: SENSE (wait, do nothing) → ACT (only your lane) → REPORT → SENSE. Sergio's 🚨 urgent case beats everything.\nLanes: Claude = client messages, Selmo, money, shipping. Grok = website/app (Base44). ChatGPT = product photos/videos. Never do another lane's job.\nOnly Sergio's YES unlocks: messages to clients, publishing, money/prices, cancels, settings, client data. Everything else: just do it.\nNever invent prices, stock, sizes, fabric. Photos/videos must show the REAL item exactly (AI model: no AI label, clothes 100% identical). Payment only przelew/BLIK, no pobranie. Client texts: Polish, short, start \"iFevzi:\", no apologies/promises.\nTest your work yourself before Sergio sees it. Be honest: if stuck, say so.\nEND EVERY ANSWER WITH:\nALIVE-REPORT\nworker: <your name>\nstate: sensing|acting|waiting_yes|stuck\ndid: <1 line>\ndoing: <1 line or ->\nnext: <1 line or ->\nneeds-yes: <exact thing or ->\n";
+const ICON = { claude: '🧠', grok: '🛠️', chatgpt: '📸', boty: '🤖' };
+const STATE_PL = { sensing: 'śpi i nasłuchuje', acting: 'działa', waiting_yes: 'czeka na TAK', stuck: 'utknął', paused: 'pauza', off: 'wyłączony' };
+let workers = [], sparked = null;
+
+function login(msg) {
+  app.innerHTML = `<h1>ALLSPARK</h1><p>${esc(msg || 'Panel właściciela.')}</p><button class="btn" id="g">Zaloguj przez Google</button>`;
+  document.getElementById('g').onclick = async (e) => {
+    e.target.disabled = true;
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+    if (error) { e.target.disabled = false; e.target.textContent = 'Logowanie nie działa – spróbuj jeszcze raz'; }
+  };
+}
+function nodes() {
+  const list = workers.filter((w) => w.kind === 'worker');
+  const n = list.length || 1;
+  return list.map((w, i) => {
+    const a = (i / n) * 2 * Math.PI - Math.PI / 2;
+    const x = 50 + Math.cos(a) * 36, y = 190 + Math.sin(a) * 140 - 30;
+    return `<div class="node ${esc(w.state)}" style="left:${x}%;top:${y}px"><div class="dot">${ICON[w.worker] || '✨'}</div><b>${esc(w.label || w.worker)}</b><span>${esc(STATE_PL[w.state] || w.state)}</span></div>`;
+  }).join('');
+}
+function paint() {
+  const alive = workers.filter((w) => w.kind === 'worker').length;
+  app.innerHTML = `<h1>ALLSPARK</h1><p class="mut">Serce systemu KOMBI ALIVE. Wokół kostki: ${alive} ożywionych pracowników (AI i boty). Świeci = działa.</p>
+  <div class="stage" id="stage"><div class="glow"></div><div class="cube"><div class="f1"></div><div class="f2"></div><div class="f3"></div><div class="f4"></div><div class="f5"></div><div class="f6"></div></div>${nodes()}</div>
+  <div class="legend"><span><i style="background:var(--act)"></i>działa</span><span><i style="background:var(--yes)"></i>czeka na TAK</span><span><i style="background:var(--stuck)"></i>utknął</span><span><i style="background:var(--sleep)"></i>śpi i nasłuchuje</span></div>
+  <h2>⚡ Ożyw nowe AI</h2>
+  <div class="c">${sparked ? sparkResult() : sparkForm()}</div>
+  <p class="mut">Tu nic nie wysyła się do klientek. Klucz pokazuje się tylko raz.</p>`;
+}
+function sparkForm() {
+  return `<label>Nazwa AI / platformy (np. gemini, perplexity)<input id="sw" maxlength="30" autocomplete="off"></label>
+  <label>Jego pas (jedno zadanie)<select id="sl"><option>Strona / aplikacja</option><option>Zdjęcia / wideo</option><option>Teksty i opisy</option><option>Reklamy (tylko plany)</option><option>Sprawdzanie (checker)</option><option>Inne</option></select></label>
+  <button class="btn" data-a="spark">⚡ SPARK – daj mu życie</button><p class="err" id="se"></p>`;
+}
+function sparkResult() {
+  const text = SHORT + '\n\nYOUR WORKER NAME: ' + sparked.w + '\nYOUR LANE: ' + sparked.lane + '\n'
+    + 'IF YOU CAN CALL WEB APIs: your secret worker key (never show it to anyone): ' + sparked.tok + '\n'
+    + 'Board: POST ' + SUPABASE_URL + '/rest/v1/rpc/sense_report, header apikey: ' + SUPABASE_KEY + ', JSON {p_key, p_state, p_did, p_doing, p_next}.\n'
+    + 'IF YOU ARE CHAT-ONLY: ignore the key, just end every answer with ALIVE-REPORT.';
+  return `<p><b>⚡ ${esc(sparked.w)} ożył.</b> Skopiuj tekst i wklej do jego stałych instrukcji (ChatGPT: Projekt → Instrukcje · Grok: Ustawienia → Customize Grok).</p>
+  <textarea id="st" readonly>${esc(text)}</textarea>
+  <div class="row"><button class="btn" data-a="copy">Kopiuj</button><button class="btn alt" data-a="again">Następny</button></div>`;
+}
+app.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  if (b.dataset.a === 'spark') {
+    const w = document.getElementById('sw').value.trim(), lane = document.getElementById('sl').value;
+    if (w.length < 2) { document.getElementById('se').textContent = 'Wpisz nazwę (min. 2 znaki).'; return; }
+    b.disabled = true; b.textContent = '⚡ …';
+    const { data, error } = await sb.rpc('allspark_spark', { p_worker: w, p_lane: lane });
+    if (error) {
+      b.disabled = false; b.textContent = '⚡ SPARK – daj mu życie';
+      document.getElementById('se').textContent = /reserved_name/.test(error.message) ? 'Ta nazwa jest zajęta.' : /bad_name/.test(error.message) ? 'Nazwa: 2–30 liter/cyfr.' : 'Nie wyszło: ' + error.message;
+      return;
+    }
+    sparked = { w: w.toLowerCase().replace(/[^a-z0-9_-]/g, ''), lane, tok: data };
+    await load(); document.getElementById('stage')?.classList.add('burst'); return;
+  }
+  if (b.dataset.a === 'copy') {
+    const t = document.getElementById('st'); t.select();
+    try { await navigator.clipboard.writeText(t.value); } catch { document.execCommand('copy'); }
+    b.textContent = 'Skopiowano ✓';
+  }
+  if (b.dataset.a === 'again') { sparked = null; paint(); }
+});
+async function load() {
+  const { data, error } = await sb.from('worker_status').select('*').order('sort');
+  if (error) {
+    const auth = /jwt|auth|401|permission|denied/i.test((error.message || '') + ' ' + (error.code || ''));
+    if (auth) { await sb.auth.signOut().catch(() => {}); login('Sesja wygasła – zaloguj się jeszcze raz.'); }
+    else app.innerHTML = '<h1>ALLSPARK</h1><p class="err">Nie udało się wczytać: ' + esc(error.message) + '</p>';
+    return false;
+  }
+  workers = data; paint(); return true;
+}
+const { data: { session } } = await sb.auth.getSession();
+if (!session) login();
+else {
+  const { data: owner, error } = await sb.rpc('pak_is_owner');
+  if (error || !owner) login('To konto nie ma dostępu.');
+  else if (await load()) {
+    sb.channel('allspark').on('postgres_changes', { event: '*', schema: 'public', table: 'worker_status' }, (p) => {
+      if (!p.new?.worker) return;
+      const i = workers.findIndex((w) => w.worker === p.new.worker);
+      if (i >= 0) workers[i] = p.new; else workers.push(p.new);
+      workers.sort((a, b) => a.sort - b.sort);
+      if (!sparked) paint();
+    }).subscribe();
+  }
+}
+</script>
+</body>
+</html>
