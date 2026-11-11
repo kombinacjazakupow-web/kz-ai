@@ -77,12 +77,18 @@ function nodes() {
 }
 function paint() {
   const alive = workers.filter((w) => w.kind === 'worker').length;
-  app.innerHTML = `<h1>ALLSPARK</h1><p class="mut">Serce systemu KOMBI ALIVE. Wokół kostki: ${alive} ożywionych pracowników (AI i boty). Świeci = działa.</p>
+  app.innerHTML = `<h1>ALLSPARK</h1><p class="mut">Serce systemu KOMBI ALIVE. Wokół kostki: <span id="count">${alive}</span> ożywionych pracowników (AI i boty). Świeci = działa.</p>
   <div class="stage" id="stage"><div class="glow"></div><div class="cube"><div class="f1"></div><div class="f2"></div><div class="f3"></div><div class="f4"></div><div class="f5"></div><div class="f6"></div></div>${nodes()}</div>
   <div class="legend"><span><i style="background:var(--act)"></i>działa</span><span><i style="background:var(--yes)"></i>czeka na TAK</span><span><i style="background:var(--stuck)"></i>utknął</span><span><i style="background:var(--sleep)"></i>śpi i nasłuchuje</span></div>
   <h2>⚡ Ożyw nowe AI</h2>
   <div class="c">${sparked ? sparkResult() : sparkForm()}</div>
   <p class="mut">Tu nic nie wysyła się do klientek. Klucz pokazuje się tylko raz.</p>`;
+}
+function paintStage() {
+  const st = document.getElementById('stage'); if (!st) return;
+  st.querySelectorAll('.node').forEach((n) => n.remove());
+  st.insertAdjacentHTML('beforeend', nodes());
+  const c = document.getElementById('count'); if (c) c.textContent = workers.filter((w) => w.kind === 'worker').length;
 }
 function sparkForm() {
   return `<label>Nazwa AI / platformy (np. gemini, perplexity)<input id="sw" maxlength="30" autocomplete="off"></label>
@@ -111,7 +117,7 @@ app.addEventListener('click', async (e) => {
       return;
     }
     sparked = { w: w.toLowerCase().replace(/[^a-z0-9_-]/g, ''), lane, tok: data };
-    await load(); document.getElementById('stage')?.classList.add('burst'); return;
+    await load(); const stg = document.getElementById('stage'); if (stg) { stg.classList.add('burst'); setTimeout(() => stg.classList.remove('burst'), 1300); } return;
   }
   if (b.dataset.a === 'copy') {
     const t = document.getElementById('st'); t.select();
@@ -141,7 +147,7 @@ else {
       const i = workers.findIndex((w) => w.worker === p.new.worker);
       if (i >= 0) workers[i] = p.new; else workers.push(p.new);
       workers.sort((a, b) => a.sort - b.sort);
-      if (!sparked) paint();
+      paintStage();
     }).subscribe();
   }
 }
