@@ -115,7 +115,13 @@ async function loadAll() {
     sb.from('approvals').select('*').eq('status', 'open').order('created_at', { ascending: true }).limit(50),
     sb.from('urgent_cases').select('*').neq('status', 'closed').order('id', { ascending: false }).limit(20),
   ]);
-  if (ev.error || wk.error || ap.error || ur.error) { app.innerHTML = '<h1>SENSE</h1><p>Nie udało się wczytać. Odśwież stronę.</p>'; return false; }
+  const err = ev.error || wk.error || ap.error || ur.error;
+  if (err) {
+    const auth = /jwt|auth|401|permission|denied/i.test((err.message || '') + ' ' + (err.code || ''));
+    if (auth) { await sb.auth.signOut().catch(() => {}); login('Sesja wygasła – zaloguj się jeszcze raz.'); }
+    else app.innerHTML = '<h1>SENSE</h1><p>Nie udało się wczytać. Odśwież stronę.</p><p class="mut">' + esc(err.message || '') + '</p>';
+    return false;
+  }
   S.events = ev.data; S.workers = wk.data; S.approvals = ap.data; S.urgent = ur.data; paint(); return true;
 }
 
