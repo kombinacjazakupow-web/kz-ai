@@ -4,16 +4,25 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#16130f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SENSE">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="shop.css">
 <title>SENSE · KOMBI</title>
 <style>
-:root{--bg:#f6f6f4;--card:#fff;--ink:#1c1c1a;--mut:#66665f;--line:#deded8;--red:#b3261e;--redbg:#fde8e6;--ok:#1e7a3c;--warn:#a85d00;--blue:#1d5fb3;--btn:#1c1c1a;--btnink:#fff}
-@media (prefers-color-scheme:dark){:root{--bg:#161615;--card:#21211f;--ink:#f1f1ec;--mut:#a8a89f;--line:#3a3a36;--red:#ff8a80;--redbg:#3a1d1a;--ok:#7fd69a;--warn:#ffb74d;--blue:#8ab4f8;--btn:#f1f1ec;--btnink:#161615}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif}
-main{max-width:760px;margin:0 auto;padding:16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:20px 0 6px}.mut{color:var(--mut);font-size:14px}
-.c{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:8px 0}
-.pilne{display:block;width:100%;padding:18px;border:0;border-radius:12px;background:var(--red);color:#fff;font:700 22px system-ui,sans-serif}
+:root{--bg:var(--canvas);--card:var(--canvas-soft);--mut:var(--mute);--line:var(--hairline);--red:#c8102e;--redbg:#fde8ea;--ok:#1e7a3c;--warn:#a85d00;--blue:var(--primary);--btn:var(--primary);--btnink:#fff}
+@media (prefers-color-scheme:dark){:root{--red:#ff6b81;--redbg:#3a1a20;--ok:#7fd69a;--warn:#ffb74d;--blue:#9d8fff}}
+body{background:var(--canvas);color:var(--ink)}
+main{max-width:760px;margin:0 auto;padding:16px}h1{font-family:var(--serif);font-weight:400;font-size:40px;margin:8px 0 4px}h2{font-family:var(--serif);font-weight:400;font-size:26px;margin:26px 0 8px}
+.top{display:flex;align-items:center;gap:14px;margin:4px 0 6px}.top .mark{width:64px;height:64px;font-size:22px;flex:none}.top h1{font-size:34px;margin:0}
+.hero-g{margin:-16px -16px 8px;padding:24px 16px 18px;background:radial-gradient(120% 90% at 0% 0%,rgba(243,230,212,.55),transparent 55%),radial-gradient(90% 80% at 60% 0%,rgba(150,140,255,.45),transparent 60%),radial-gradient(80% 90% at 100% 20%,rgba(140,20,50,.45),transparent 60%)}.mut{color:var(--mut);font-size:14px}
+.c{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:10px 0}
+.pilne{display:block;width:100%;padding:18px;border:0;border-radius:999px;background:var(--red);color:#fff;font:600 22px Inter,system-ui,sans-serif;min-height:64px}
 .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-button{font:inherit;cursor:pointer}.row button{padding:10px 14px;border-radius:8px;border:0;background:var(--btn);color:var(--btnink);min-width:88px}
+button{font:inherit;cursor:pointer}.row button{padding:12px 18px;min-height:48px;border-radius:999px;border:0;background:var(--btn);color:var(--btnink);min-width:88px}
 .row button.alt{background:transparent;color:var(--ink);border:1px solid var(--line)}
 .row button.yes{background:var(--ok);color:#fff}.row button.no{background:var(--red);color:#fff}
 button:disabled{opacity:.5}
@@ -30,7 +39,7 @@ dl{display:grid;grid-template-columns:70px 1fr;gap:2px 8px;margin:6px 0 0;font-s
 </style>
 </head>
 <body>
-<main id="app"><p>Ładowanie…</p></main>
+<div class="sheet"><main id="app"><p>Ładowanie…</p></main></div>
 <script type="module">
 // Same client + login as skrzynka.html (publishable key from common.js, owner check via pak_is_owner).
 // This page NEVER sends anything to clients and never touches Selmo, DPD or money.
@@ -46,7 +55,15 @@ const hm = (t) => t ? new Date(t).toLocaleString('pl-PL', { day: '2-digit', mont
 const ago = (t) => { if (!t) return 'nigdy'; const m = Math.round((Date.now() - new Date(t)) / 60000); return m < 1 ? 'teraz' : m < 60 ? `${m} min temu` : m < 1440 ? `${Math.round(m / 60)} h temu` : `${Math.round(m / 1440)} dni temu`; };
 
 function login(msg) {
-  app.innerHTML = `<h1>SENSE</h1><p class="mut">${esc(msg || 'Najpierw zaloguj się na stronie admina, potem wróć tutaj.')}</p><p><a style="display:inline-block;padding:8px 12px;border-radius:8px;background:var(--btn);color:var(--btnink);text-decoration:none" href="admin.html">Otwórz stronę admina</a></p>`;
+  app.innerHTML = `<div class="center" style="padding-top:8px"><div class="hero-g"><div class="mark" style="width:88px;height:88px;font-size:32px">KS</div><h1>KOMBI SENSE</h1></div>
+    <p>${esc(msg || 'Panel właściciela.')}</p>
+    <button type="button" id="google" class="btn primary" style="width:100%">Zaloguj przez Google</button>
+    <p><a class="back" href="./">← Sklep</a></p></div>`;
+  document.getElementById('google').onclick = async (e) => {
+    e.target.disabled = true;
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+    if (error) { e.target.disabled = false; e.target.textContent = 'Logowanie nie działa – spróbuj jeszcze raz'; }
+  };
 }
 
 function paint() {
@@ -60,7 +77,7 @@ function paint() {
   const sources = S.workers.filter((w) => w.kind === 'source');
   const liveOn = (() => { const l = S.events.find((e) => e.type === 'live.start' || e.type === 'live.end'); return l && l.type === 'live.start'; })();
 
-  app.innerHTML = `<h1>SENSE</h1><p class="mut">Tu nic się nie wysyła. Przyciski tylko zapisują Twoją decyzję. <span id="conn">${esc(S.conn)}</span></p>
+  app.innerHTML = `<div class="hero-g"><div class="top"><div class="mark">KS</div><h1>KOMBI SENSE</h1></div></div><p class="mut">Tu nic się nie wysyła. Przyciski tylko zapisują Twoją decyzję. <span id="conn">${esc(S.conn)}</span></p>
 
   <button class="pilne" data-a="urgent-toggle">🚨 PILNE</button>
   ${S.urgentOpen ? `<div class="c urg">
@@ -119,7 +136,7 @@ async function loadAll() {
   if (err) {
     const auth = /jwt|auth|401|permission|denied/i.test((err.message || '') + ' ' + (err.code || ''));
     if (auth) { await sb.auth.signOut().catch(() => {}); login('Sesja wygasła – zaloguj się jeszcze raz.'); }
-    else app.innerHTML = '<h1>SENSE</h1><p>Nie udało się wczytać. Odśwież stronę.</p><p class="mut">' + esc(err.message || '') + '</p>';
+    else app.innerHTML = '<div class="hero-g"><div class="top"><div class="mark">KS</div><h1>KOMBI SENSE</h1></div></div><p>Nie udało się wczytać. Odśwież stronę.</p><p class="mut">' + esc(err.message || '') + '</p>';
     return false;
   }
   S.events = ev.data; S.workers = wk.data; S.approvals = ap.data; S.urgent = ur.data; paint(); return true;
