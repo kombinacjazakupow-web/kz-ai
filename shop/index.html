@@ -14,20 +14,20 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="shop.css">
+  <link rel="stylesheet" href="shop.css?v=19">
   <script type="importmap">
   {
     "imports": {
-      "#common": "./common.js?v=18",
-      "#variants": "./variants.js?v=18",
-      "#window": "./window.js?v=18",
-      "#buy": "./buy.js?v=18",
-      "#checkout": "./checkout.js?v=18",
-      "#los": "./los.js?v=18",
-      "#rolki": "./rolki.js?v=18",
-      "#install": "./install.js?v=18",
-      "#soon": "./soon.js?v=18",
-      "#account": "./account.js?v=18"
+      "#common": "./common.js?v=19",
+      "#variants": "./variants.js?v=19",
+      "#window": "./window.js?v=19",
+      "#buy": "./buy.js?v=19",
+      "#checkout": "./checkout.js?v=19",
+      "#los": "./los.js?v=19",
+      "#rolki": "./rolki.js?v=19",
+      "#install": "./install.js?v=19",
+      "#soon": "./soon.js?v=19",
+      "#account": "./account.js?v=19"
     }
   }
   </script>
@@ -40,7 +40,7 @@
   </div>
   <noscript><p class="noscript">Włącz JavaScript, żeby otworzyć sklep.</p></noscript>
   <script type="module">
-    import('./shop.js?v=18').catch(() => {
+    import('./shop.js?v=19').catch(() => {
       const el = document.getElementById('app');
       if (el) el.textContent = 'Nie udało się załadować sklepu. Sprawdź połączenie i odśwież.';
     });

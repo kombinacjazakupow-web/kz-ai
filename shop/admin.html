@@ -10,12 +10,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <title>Panel · KOMBI Sklep</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="shop.css">
+  <link rel="stylesheet" href="shop.css?v=19">
   <script type="importmap">
   {
     "imports": {
-      "#common": "./common.js?v=18",
-      "#variants": "./variants.js?v=18"
+      "#common": "./common.js?v=19",
+      "#variants": "./variants.js?v=19"
     }
   }
   </script>
@@ -28,7 +28,7 @@
   </div>
   <noscript><p class="noscript">Włącz JavaScript, żeby otworzyć panel.</p></noscript>
   <script type="module">
-    import('./admin.js?v=18').catch(() => {
+    import('./admin.js?v=19').catch(() => {
       const el = document.getElementById('admin');
       if (el) el.textContent = 'Nie udało się załadować panelu. Sprawdź połączenie i odśwież.';
     });

@@ -1993,9 +1993,11 @@ if (typeof window !== 'undefined') {
     if (booted) paint({ keep: true });
   });
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js?v=18', { scope: './' }).catch(() => {});
-    });
+    const registerShell = () => {
+      navigator.serviceWorker.register('./sw.js?v=19', { scope: './' }).catch(() => {});
+    };
+    if (document.readyState === 'complete') registerShell();
+    else window.addEventListener('load', registerShell);
   }
 }
 
