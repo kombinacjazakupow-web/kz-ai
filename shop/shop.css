@@ -1103,15 +1103,64 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] { border-color: var(--
   .live { margin-left: 32px; margin-right: 32px; }
 }
 
+@keyframes wash-drift {
+  from { transform: translate3d(-32px, -12px, 0); }
+  to { transform: translate3d(32px, 16px, 0); }
+}
+@keyframes wash-slide {
+  from { transform: none; }
+  to { transform: translate3d(-36px, -14px, 0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  #app.sheet::before,
+  .sheet:has(main.legal)::before {
+    animation: wash-slide 16s ease-in-out -6s infinite alternate;
+  }
+  #app.sheet::after,
+  .sheet:has(main.legal)::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(44% 48% at 8% 10%, rgba(245, 233, 212, 0.55), transparent 70%),
+      radial-gradient(36% 42% at 32% 0%, rgba(246, 186, 120, 0.12), transparent 68%),
+      radial-gradient(40% 46% at 70% 8%, rgba(198, 186, 255, 0.16), transparent 70%),
+      radial-gradient(32% 40% at 14% 84%, rgba(198, 186, 255, 0.1), transparent 72%),
+      radial-gradient(28% 36% at 88% 78%, rgba(246, 186, 120, 0.08), transparent 70%);
+    animation: wash-drift 14s ease-in-out -5s infinite alternate;
+  }
+  #app.sheet:has(main.reels)::before,
+  #app.sheet:has(main.reels)::after { animation: none; }
+  #app.sheet:has(main.reels)::after { content: none; }
+}
+@media (max-width: 899px) and (prefers-reduced-motion: no-preference) {
+  body:has(main.hanger-page) #app.sheet::before { animation: none; }
+}
+@media (prefers-color-scheme: dark) and (prefers-reduced-motion: no-preference) {
+  #app.sheet::after,
+  .sheet:has(main.legal)::after {
+    background:
+      radial-gradient(44% 48% at 8% 10%, rgba(245, 233, 212, 0.06), transparent 70%),
+      radial-gradient(36% 42% at 32% 0%, rgba(246, 186, 120, 0.05), transparent 68%),
+      radial-gradient(40% 46% at 70% 8%, rgba(198, 186, 255, 0.08), transparent 70%),
+      radial-gradient(32% 40% at 14% 84%, rgba(198, 186, 255, 0.05), transparent 72%),
+      radial-gradient(28% 36% at 88% 78%, rgba(83, 58, 253, 0.08), transparent 70%);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; }
   .order.flash { transition: none; }
   .search, input, textarea { transition: none; }
+  .sheet::before,
+  .sheet::after { animation: none; }
+  .sheet::after { content: none; }
 }
 
 @media print {
   body { background: #fff; padding: 0; }
-  .top, .footer, .btn, .gal-nav, .toast, .sheet::before { display: none !important; }
+  .top, .footer, .btn, .gal-nav, .toast, .sheet::before, .sheet::after { display: none !important; }
   .sheet { width: auto; box-shadow: none; }
   .copyline { break-inside: avoid; }
 }
