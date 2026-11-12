@@ -40,6 +40,7 @@ assert.match(worker, /const VERSION = '19'/);
 assert.match(worker, /kombi-sklep-shell-v\$\{VERSION\}/);
 assert.match(worker, /cache: 'reload'/);
 assert.match(worker, /\?v=\$\{VERSION\}/);
+assert.match(worker, /item\.endsWith\('\.js'\) \|\| item\.endsWith\('\.css'\)/);
 const page = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
 assert.match(page, /shop\.js\?v=19/);
 assert.match(page, /#common": "\.\/common\.js\?v=19"/);
