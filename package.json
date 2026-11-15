@@ -1,0 +1,15 @@
+{
+  "type": "module",
+  "imports": {
+    "#common": "./shop/common.js",
+    "#variants": "./shop/variants.js",
+    "#window": "./shop/window.js",
+    "#buy": "./shop/buy.js",
+    "#checkout": "./shop/checkout.js",
+    "#los": "./shop/los.js",
+    "#rolki": "./shop/rolki.js",
+    "#install": "./shop/install.js",
+    "#soon": "./shop/soon.js",
+    "#account": "./shop/account.js"
+  }
+}

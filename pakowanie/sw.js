@@ -21,7 +21,11 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(
+        keys
+          .filter((key) => key.startsWith('kombi-shell-') && key !== CACHE)
+          .map((key) => caches.delete(key)),
+      ))
       .then(() => self.clients.claim()),
   );
 });
@@ -36,6 +40,8 @@ self.addEventListener('fetch', (event) => {
   }
   if (url.origin === self.location.origin) {
     if (url.search) return;
+    const scopePath = new URL('./', self.registration.scope).pathname;
+    if (!url.pathname.startsWith(scopePath)) return;
     event.respondWith(networkFirst(req));
     return;
   }

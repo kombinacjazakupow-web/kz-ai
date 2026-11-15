@@ -9,6 +9,7 @@ import {
 const SUPABASE_URL = 'https://ghhatjkcgilnruluhxyr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_pIiSGwIiJJmkNsvlZyniAw_6CQ1FlpF';
 const QUEUE_KEY = 'kombi-tick-queue';
+const PAGE = 1000;
 const LOCK_MS = 30 * 60 * 1000;
 const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true, autoRefreshToken: true },
@@ -36,6 +37,12 @@ const inflight = { inserts: [], deletes: [] };
 let lockToken = 0, authGen = 0, painted = '';
 let channelsReady = false, meWatch = false, signGen = 0;
 let pendingShot = null;
+let activeUserId = null;
+let queueOpen = true;
+let ticksEpoch = 0;
+let flushWait = null;
+let toastText = '';
+let toastTimer = 0;
 
 function blankReport() {
   return { itemId: '', field: 'missing', newValue: '', why: '' };
@@ -133,12 +140,38 @@ export function visibleBags(bags, items, ticks, meId, filter, query) {
   }).sort((a, b) => bagNum(a.bag_no) - bagNum(b.bag_no) || String(a.bag_no).localeCompare(String(b.bag_no), 'pl'));
 }
 
+export function queueStorageKey(userId) {
+  const id = String(userId || '').trim();
+  return id ? `${QUEUE_KEY}:${id}` : '';
+}
+export function clearStoredQueue(userId, storage) {
+  if (!storage) return;
+  const key = queueStorageKey(userId);
+  if (key) storage.removeItem(key);
+  storage.removeItem(QUEUE_KEY);
+}
+function currentUserId() {
+  return state.me?.id || state.session?.user?.id || activeUserId || '';
+}
 function loadQueue() {
-  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+  if (!queueOpen) return [];
+  const key = queueStorageKey(currentUserId());
+  if (!key) return [];
+  try { return JSON.parse(localStorage.getItem(key) || '[]'); }
   catch { return []; }
 }
 function saveQueue(q) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  if (!queueOpen) return;
+  const key = queueStorageKey(currentUserId());
+  if (!key) return;
+  localStorage.setItem(key, JSON.stringify(q));
+}
+function dropQueueFor(userId) {
+  queueOpen = false;
+  try { clearStoredQueue(userId || currentUserId(), localStorage); } catch { /* private mode */ }
+  activeUserId = null;
+  savedTicks.length = 0;
+  savedGone.clear();
 }
 export function enqueue(job, existing = []) {
   const q = existing.slice();
@@ -157,6 +190,32 @@ export function enqueue(job, existing = []) {
   q.push(job);
   return q;
 }
+export function finishFlush(current, succeeded) {
+  const done = new Set(succeeded || []);
+  return (current || []).filter((job) => !done.has(`${job.op}:${job.id}`));
+}
+export function canTickBag(bag) {
+  return !!bag && bag.status !== 'done' && bag.status !== 'hold';
+}
+export function ticksResponseFresh(startedEpoch, nowEpoch) {
+  return startedEpoch === nowEpoch;
+}
+export async function collectPages(pageSize, fetchPage) {
+  const rows = [];
+  const seen = new Set();
+  for (let from = 0; ; from += pageSize) {
+    const list = (await fetchPage(from, from + pageSize - 1)) || [];
+    let added = 0;
+    for (const row of list) {
+      const stable = row?.id ? `id:${row.id}` : (row?.bag_no ? `bag:${row.bag_no}` : '');
+      if (stable && seen.has(stable)) continue;
+      if (stable) seen.add(stable);
+      rows.push(row);
+      added += 1;
+    }
+    if (list.length < pageSize || added === 0) return rows;
+  }
+}
 export function mergeTicks(serverTicks, queue = [], extra = { inserts: [], deletes: [] }) {
   const deleted = new Set(queue.filter((j) => j.op === 'delete').map((j) => j.id));
   for (const id of extra.deletes || []) deleted.add(id);
@@ -169,8 +228,34 @@ export function mergeTicks(serverTicks, queue = [], extra = { inserts: [], delet
   }
   return ticks;
 }
+const savedTicks = [];
+const savedGone = new Set();
+export function keepFreshTicks(serverRows, saved, goneIds) {
+  const gone = goneIds instanceof Set ? goneIds : new Set(goneIds || []);
+  const incoming = (serverRows || []).filter((row) => row && !gone.has(row.id));
+  const seen = new Set(incoming.map((row) => row.id));
+  const still = (saved || []).filter((row) => row && !seen.has(row.id) && !gone.has(row.id));
+  return { incoming, still };
+}
+function noteSavedTick(row) {
+  savedGone.delete(row.id);
+  if (!savedTicks.some((t) => t.id === row.id)) {
+    savedTicks.push({ id: row.id, item_id: row.item_id, user_id: row.user_id, created_at: row.created_at });
+  }
+}
+function noteRemovedTick(id) {
+  savedGone.add(id);
+  const i = savedTicks.findIndex((t) => t.id === id);
+  if (i >= 0) savedTicks.splice(i, 1);
+}
 function applyServerTicks(rows) {
-  state.ticks = mergeTicks(rows, loadQueue(), inflight);
+  const { incoming, still } = keepFreshTicks(rows, savedTicks, savedGone);
+  savedTicks.length = 0;
+  savedTicks.push(...still);
+  state.ticks = mergeTicks(incoming, loadQueue(), {
+    inserts: inflight.inserts.concat(savedTicks),
+    deletes: inflight.deletes.concat([...savedGone]),
+  });
 }
 function queuePush(job) {
   saveQueue(enqueue(job, loadQueue()));
@@ -200,51 +285,71 @@ function rpcText(data) {
   }
   return String(data ?? '').trim();
 }
-let flushing = false;
-async function flushQueue() {
-  if (flushing || !state.session || !navigator.onLine) {
-    paintBanner();
-    return;
-  }
-  flushing = true;
-  const pending = loadQueue();
-  const left = [];
-  for (const job of pending) {
-    let error = null;
-    try {
-      if (job.op === 'insert') {
-        const res = await sb.from('pak_ticks').insert({
-          id: job.id, item_id: job.item_id, user_id: job.user_id, created_at: job.created_at,
-        });
-        error = res.error && !isDuplicate(res.error) ? res.error : null;
-      } else {
-        const res = await sb.from('pak_ticks').delete().eq('id', job.id).eq('user_id', job.user_id || state.me?.id);
-        error = res.error;
-      }
-    } catch (err) {
-      error = err;
+function jobKey(job) {
+  return `${job.op}:${job.id}`;
+}
+async function sendQueued(job) {
+  try {
+    if (job.op === 'insert') {
+      const res = await sb.from('pak_ticks').insert({
+        id: job.id, item_id: job.item_id, user_id: job.user_id, created_at: job.created_at,
+      });
+      return res.error && !isDuplicate(res.error) ? res.error : null;
     }
-    if (error && isRetryable(error)) left.push(job);
+    const res = await sb.from('pak_ticks').delete().eq('id', job.id).eq('user_id', job.user_id || currentUserId());
+    return res.error;
+  } catch (err) {
+    return err;
   }
-  saveQueue(left);
-  flushing = false;
+}
+async function runFlush() {
+  const snapshot = loadQueue();
+  const succeeded = [];
+  for (const job of snapshot) {
+    const still = loadQueue().some((row) => row.op === job.op && row.id === job.id);
+    if (!still) continue;
+    const error = await sendQueued(job);
+    if (!(error && isRetryable(error))) {
+      succeeded.push(jobKey(job));
+      if (job.op === 'insert') noteSavedTick(job);
+      else noteRemovedTick(job.id);
+    }
+  }
+  saveQueue(finishFlush(loadQueue(), succeeded));
   paintBanner();
-  if (left.length !== pending.length) scheduleReload('pak_ticks');
+  if (succeeded.length) scheduleReload('pak_ticks');
+}
+function flushQueue() {
+  if (!queueOpen || !state.session || !navigator.onLine) {
+    paintBanner();
+    return Promise.resolve();
+  }
+  if (!flushWait) flushWait = runFlush().finally(() => { flushWait = null; });
+  return flushWait;
 }
 function paintBanner() {
-  const el = document.getElementById('offline');
+  const el = typeof document === 'undefined' ? null : document.getElementById('offline');
   if (!el) return;
   const on = offlineOn();
   el.hidden = !on;
   if (on) el.textContent = 'offline – zapisane w telefonie';
 }
-function toast(msg, ms = 4600) {
-  let el = document.getElementById('toast');
+export function currentToast() {
+  return toastText;
+}
+function paintToast() {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('toast');
   if (!el) return;
-  el.textContent = msg;
-  el.hidden = false;
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => { el.hidden = true; }, ms);
+  el.textContent = toastText;
+  el.hidden = !toastText;
+}
+export function toast(msg, ms = 4600) {
+  toastText = msg || '';
+  paintToast();
+  clearTimeout(toastTimer);
+  if (!toastText) return;
+  toastTimer = setTimeout(() => { toastText = ''; paintToast(); }, ms);
 }
 function bagBy(no) {
   return state.bags.find((b) => b.bag_no === no) || null;
@@ -257,13 +362,26 @@ function giftText(g) {
   return s;
 }
 
+const ORDER_COL = { pak_bags: 'bag_no', pak_items: 'id', pak_ticks: 'id', pak_users: 'id', pak_change_requests: 'id' };
+async function fetchAll(table, filter) {
+  try {
+    const rows = await collectPages(PAGE, async (from, to) => {
+      let q = sb.from(table).select(table === 'pak_users' ? 'id,name,email,role,status' : '*')
+        .order(ORDER_COL[table] || 'id', { ascending: true });
+      if (filter) q = filter(q);
+      const { data, error } = await q.range(from, to);
+      if (error) throw error;
+      return data || [];
+    });
+    return { data: rows, error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
+}
 async function loadCore() {
+  const epoch = ticksEpoch;
   const [bags, items, ticks, users, photos] = await Promise.all([
-    sb.from('pak_bags').select('*'),
-    sb.from('pak_items').select('*'),
-    sb.from('pak_ticks').select('*'),
-    sb.from('pak_users').select('id,name,email,role,status'),
-    sb.from('pak_photos').select('*'),
+    fetchAll('pak_bags'), fetchAll('pak_items'), fetchAll('pak_ticks'), fetchAll('pak_users'), fetchAll('pak_photos'),
   ]);
   if (bags.error) throw bags.error;
   if (items.error) throw items.error;
@@ -272,33 +390,40 @@ async function loadCore() {
   state.bags = bags.data || [];
   state.items = items.data || [];
   state.photos = photos.data || [];
-  applyServerTicks(ticks.data || []);
+  if (ticksResponseFresh(epoch, ticksEpoch)) applyServerTicks(ticks.data || []);
+  else scheduleReload('pak_ticks');
   if (!users.error && users.data) state.users = users.data;
   else if (state.me && !state.users.some((u) => u.id === state.me.id)) state.users.push(state.me);
   if (state.me?.role === 'owner') {
-    const req = await sb.from('pak_change_requests').select('*').eq('status', 'pending');
+    const req = await fetchAll('pak_change_requests', (q) => q.eq('status', 'pending'));
     if (!req.error) state.requests = req.data || [];
   }
 }
 const reloadTimers = {};
+const reloadGen = {};
 function scheduleReload(table) {
   clearTimeout(reloadTimers[table]);
   reloadTimers[table] = setTimeout(() => reloadTable(table), 280);
 }
 async function reloadTable(table) {
-  let q = sb.from(table).select(table === 'pak_users' ? 'id,name,email,role,status' : '*');
-  if (table === 'pak_change_requests') q = q.eq('status', 'pending');
-  const { data, error } = await q;
-  if (!error && data) {
-    if (table === 'pak_bags') state.bags = data;
-    else if (table === 'pak_items') state.items = data;
-    else if (table === 'pak_ticks') applyServerTicks(data);
-    else if (table === 'pak_change_requests') state.requests = data;
-    else if (table === 'pak_users') state.users = data;
-    else if (table === 'pak_photos') {
-      state.photos = data;
-      syncViewer();
-    }
+  const gen = (reloadGen[table] = (reloadGen[table] || 0) + 1);
+  const epoch = ticksEpoch;
+  const filter = table === 'pak_change_requests' ? (q) => q.eq('status', 'pending') : null;
+  const { data, error } = await fetchAll(table, filter);
+  if (reloadGen[table] !== gen) return;
+  if (error || !data) { render(); return; }
+  if (table === 'pak_ticks' && !ticksResponseFresh(epoch, ticksEpoch)) {
+    scheduleReload('pak_ticks');
+    return;
+  }
+  if (table === 'pak_bags') state.bags = data;
+  else if (table === 'pak_items') state.items = data;
+  else if (table === 'pak_ticks') applyServerTicks(data);
+  else if (table === 'pak_change_requests') state.requests = data;
+  else if (table === 'pak_users') state.users = data;
+  else if (table === 'pak_photos') {
+    state.photos = data;
+    syncViewer();
   }
   render();
 }
@@ -370,6 +495,9 @@ async function enter(session) {
     render();
     return;
   }
+  queueOpen = true;
+  activeUserId = session.user.id;
+  try { localStorage.removeItem(QUEUE_KEY); } catch { /* ignore legacy key */ }
   state.screen = 'boot';
   render();
   watchMe();
@@ -410,7 +538,7 @@ function route() {
   render();
 }
 async function refreshBags(token) {
-  const { data, error } = await sb.from('pak_bags').select('*');
+  const { data, error } = await fetchAll('pak_bags');
   if (!error && data && token === lockToken) state.bags = data;
 }
 async function openBag(no) {
@@ -445,32 +573,41 @@ async function dbResult(promise) {
   try { return await promise; }
   catch (error) { return { error }; }
 }
+function bumpTicks() { ticksEpoch += 1; }
 async function toggleTick(itemId) {
   if (!itemId || !state.me) return;
+  const item = state.items.find((row) => row.id === itemId);
+  const bag = item ? bagBy(item.bag_no) : null;
+  if (!canTickBag(bag)) {
+    toast(bag?.status === 'hold' ? 'Worek wstrzymany — bez odhaczeń' : 'Worek zamknięty — bez odhaczeń');
+    return;
+  }
   const existing = tickFor(itemId);
   if (existing && existing.user_id !== state.me.id) { toast('To odhaczenie należy do innej osoby'); return; }
   if (existing) {
+    bumpTicks();
     state.ticks = state.ticks.filter((t) => t.id !== existing.id);
     inflight.deletes.push(existing.id);
     render();
     const { error } = await dbResult(sb.from('pak_ticks').delete().eq('id', existing.id).eq('user_id', state.me.id));
     inflight.deletes = inflight.deletes.filter((id) => id !== existing.id);
-    if (!error) return;
+    if (!error) { noteRemovedTick(existing.id); return; }
     if (isRetryable(error)) queuePush({ op: 'delete', id: existing.id, user_id: state.me.id, item_id: itemId });
-    else { state.ticks.push(existing); toast(error.message || 'Nie udało się cofnąć'); render(); }
+    else { bumpTicks(); state.ticks.push(existing); toast(error.message || 'Nie udało się cofnąć'); render(); }
     return;
   }
   const row = { id: uuid(), item_id: itemId, user_id: state.me.id, created_at: new Date().toISOString() };
+  bumpTicks();
   state.ticks.push(row);
   inflight.inserts.push(row);
   state.missingIds = state.missingIds.filter((id) => id !== itemId);
   render();
   const { error } = await dbResult(sb.from('pak_ticks').insert(row));
   inflight.inserts = inflight.inserts.filter((r) => r.id !== row.id);
-  if (!error) return;
+  if (!error) { noteSavedTick(row); return; }
   if (isRetryable(error)) queuePush({ op: 'insert', ...row });
   else if (isDuplicate(error)) scheduleReload('pak_ticks');
-  else { state.ticks = state.ticks.filter((t) => t.id !== row.id); toast(error.message || 'Nie udało się zapisać'); render(); }
+  else { bumpTicks(); state.ticks = state.ticks.filter((t) => t.id !== row.id); toast(error.message || 'Nie udało się zapisać'); render(); }
 }
 function unticked(bagNo) {
   const items = itemsOf(bagNo);
@@ -484,7 +621,7 @@ async function doneBag() {
     toast('Brak sieci — worek nie został zamknięty.');
     return;
   }
-  if (loadQueue().length) await flushQueue();
+  if (loadQueue().length || flushWait) await flushQueue();
   if (loadQueue().length) {
     toast('Są odhaczenia tylko w telefonie. Poczekaj na sieć.');
     return;
@@ -507,8 +644,10 @@ async function doneBag() {
     return;
   }
   if (rpcText(data) === 'not_all_ticked') {
-    const { data: ticks, error: tickErr } = await sb.from('pak_ticks').select('*');
-    if (!tickErr && ticks) applyServerTicks(ticks);
+    const epoch = ticksEpoch;
+    const { data: ticks, error: tickErr } = await fetchAll('pak_ticks');
+    if (!tickErr && ticks && ticksResponseFresh(epoch, ticksEpoch)) applyServerTicks(ticks);
+    else if (!ticksResponseFresh(epoch, ticksEpoch)) scheduleReload('pak_ticks');
     const miss = unticked(state.bagNo);
     state.missingIds = miss.map((i) => i.id);
     render();
@@ -607,6 +746,7 @@ async function onRefresh() {
   await refreshMe();
 }
 async function logout() {
+  const uid = currentUserId();
   state.menu = false;
   state.viewer = null;
   state.photos = [];
@@ -616,6 +756,7 @@ async function logout() {
   clearSigned();
   channelsReady = false;
   meWatch = false;
+  dropQueueFor(uid);
   try { await sb.removeAllChannels(); } catch { /* already gone */ }
   try { await sb.auth.signOut({ scope: 'local' }); } catch { /* listener clears the screen */ }
   state.session = null;
@@ -637,7 +778,7 @@ async function login() {
   }
 }
 
-function render() {
+export function render() {
   const root = document.getElementById('app');
   if (!root) return;
   prepareViewer();
@@ -650,6 +791,7 @@ function render() {
   const pos = active && typeof active.selectionStart === 'number' ? active.selectionStart : null;
   root.innerHTML = shell();
   paintBanner();
+  paintToast();
   if (focusId) {
     const el = document.getElementById(focusId);
     if (el) {
@@ -821,10 +963,11 @@ function pickRow(it) {
   const meta = TYPE_META[bag?.type] || { label: bag?.type || '', cls: '' };
   const tick = tickFor(it.id);
   const on = !!tick;
-  const tickable = it.state === 'NEW' || it.state === 'OLD';
+  const openBagTicks = canTickBag(bag);
+  const tickable = (it.state === 'NEW' || it.state === 'OLD') && openBagTicks;
   const btn = tickable
     ? `<button type="button" class="tick${on ? ' on' : ''}" data-act="tick" data-id="${esc(it.id)}" aria-pressed="${on}" aria-label="${on ? 'Cofnij odhaczenie' : 'Odhacz'}">${on ? '✓' : ''}</button>`
-    : '<span class="tick ghost"></span>';
+    : (on && (it.state === 'NEW' || it.state === 'OLD') ? '<span class="tick on" aria-hidden="true">✓</span>' : '<span class="tick ghost"></span>');
   const tag = GROUPS.find((g) => g[0] === it.state);
   return `<article class="row">${productThumbHtml(it, state.photos)}${btn}<div><div class="line1"><button type="button" class="link" data-act="open" data-bag="${esc(it.bag_no)}">${esc(bagLabel(it.bag_no))}</button>${meta.label ? `<span class="pill ${esc(meta.cls)}">${esc(meta.label)}</span>` : ''}</div><div class="pname">${esc(bag?.client_name || '')}</div><div class="pname">${esc(it.product_name || '—')}</div><div class="meta">${esc(it.live_day || '')} · ${esc(String(it.qty ?? 0))} szt · ${pln(it.price)}${tag && !tickable ? ` · ${tag[1]}` : ''}</div></div></article>`;
 }
@@ -932,9 +1075,6 @@ function onInput(e) {
   if (el.id === 'rep-field') state.report.field = el.value;
   if (el.id === 'rep-new') state.report.newValue = el.value;
   if (el.id === 'rep-why') state.report.why = el.value;
-}
-function currentUserId() {
-  return state.session?.user?.id || state.me?.id || '';
 }
 function syncViewer() {
   if (!state.viewer) return;
@@ -1267,12 +1407,13 @@ function start() {
     if (document.visibilityState === 'visible' && state.session) flushQueue();
   });
   setInterval(() => { if (state.session) flushQueue(); }, 20000);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
   readLoginError();
   render();
   sb.auth.onAuthStateChange((event, session) => {
     if (event === 'TOKEN_REFRESHED') { state.session = session; return; }
     if (event === 'SIGNED_OUT') {
+      dropQueueFor(currentUserId());
       state.session = null; state.me = null; state.screen = 'login'; render(); return;
     }
     if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {

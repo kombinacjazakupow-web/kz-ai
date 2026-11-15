@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { SLOGANS, BLIK_COPY, photoSrc, photoUrl, slidePlan } from './common.js';
+import { dropRail, dotPaint, newestDrop, visibleDots } from './window.js';
+
+const variants = [];
+const older = { id: 'a', active: true, created_at: '2026-11-01T00:00:00.000Z', stock: 2, colors: '' };
+const newer = { id: 'b', active: true, created_at: '2026-11-04T00:00:00.000Z', stock: 2, colors: '' };
+const sold = { id: 'c', active: true, created_at: '2026-11-05T00:00:00.000Z', stock: 0, colors: '' };
+assert.equal(newestDrop([older, sold, newer], variants).id, 'b');
+assert.deepEqual(dropRail([older, newer, sold], variants).map((item) => item.id), ['a']);
+assert.equal(dotPaint('czarny'), '#1c1c1c');
+assert.equal(dotPaint('nieznany'), '#c4b7a6');
+assert.equal(visibleDots([{ name: 'ecru', stock: 0 }, { name: 'czarny', stock: 1 }]).length, 1);
+assert.equal(SLOGANS.length, 7);
+assert.equal(BLIK_COPY, '796 669 157');
+assert.equal(photoSrc('products/a.jpg', 800), photoUrl('products/a.jpg'));
+assert.equal(photoSrc('products/a.jpg', 800).includes('/render/image/'), false);
+assert.deepEqual(slidePlan(true, 1), { total: 2, controls: true });
+assert.deepEqual(slidePlan(false, 1), { total: 1, controls: false });
+assert.deepEqual(slidePlan(true, 0), { total: 1, controls: false });
+const shop = readFileSync(new URL('./shop.js', import.meta.url), 'utf8');
+assert.match(shop, /Nowość dnia/);
+assert.doesNotMatch(shop, /Drop dnia/);
+assert.doesNotMatch(shop, /href="admin.html"/);
+console.log('window-check ok');
