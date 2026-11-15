@@ -1,6 +1,6 @@
 // Shop shell only. Packing keeps its own worker at /pakowanie/sw.js.
-// Shell scripts and shop.css share ?v=19 so a new shop.js cannot run with an older common.js or stylesheet.
-const VERSION = '19';
+// Shell scripts and shop.css share ?v=20 so a new shop.js cannot run with an older common.js or stylesheet.
+const VERSION = '20';
 const CACHE = `kombi-sklep-shell-v${VERSION}`;
 const SHELL = [
   './',

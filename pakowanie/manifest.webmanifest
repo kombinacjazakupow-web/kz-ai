@@ -9,8 +9,8 @@
   "orientation": "any",
   "lang": "pl",
   "dir": "ltr",
-  "background_color": "#f3efe6",
-  "theme_color": "#141414",
+  "background_color": "#12110e",
+  "theme_color": "#12110e",
   "categories": ["business", "productivity"],
   "icons": [
     {

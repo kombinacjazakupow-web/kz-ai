@@ -1,14 +1,22 @@
 <!doctype html>
 <html lang="pl">
 <head>
+  <script>
+    try {
+      var net = navigator.connection;
+      var low = (net && net.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 2);
+      if (low) document.documentElement.setAttribute('data-power', 'low');
+    } catch (err) { /* motion stays on when the check cannot run */ }
+  </script>
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#ffffff">
+  <meta name="theme-color" content="#12110e">
   <meta name="description" content="Regulamin sklepu KOMBI. Sprzedawca: KOMBINACJA ZAKUPÓW Sp. z o.o.">
   <title>Regulamin · KOMBI Sklep</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="stylesheet" href="shop.css?v=19">
+  <link rel="stylesheet" href="shop.css?v=20">
 </head>
 <body>
   <div class="sheet">

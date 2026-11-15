@@ -1,4 +1,4 @@
-const CACHE = 'kombi-shell-v2';
+const CACHE = 'kombi-shell-v3';
 const SHELL = [
   './',
   './index.html',

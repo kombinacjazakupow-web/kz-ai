@@ -20,7 +20,7 @@ function byCreated(a, b) {
   return String(a.id || '').localeCompare(String(b.id || ''));
 }
 function camIcon() {
-  return '<svg class="camicon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9.2 5.2l1 2h3.6l1-2H18a2 2 0 012 2V17a2 2 0 01-2 2H6a2 2 0 01-2-2V7.2a2 2 0 012-2h3.2zM12 16.4a3.6 3.6 0 100-7.2 3.6 3.6 0 000 7.2z"/></svg>';
+  return '<svg class="camicon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 7.2l1.2-2h5.6L16 7.2H19a1.5 1.5 0 011.5 1.5v9.3A1.5 1.5 0 0119 19.5H5a1.5 1.5 0 01-1.5-1.5V8.7A1.5 1.5 0 015 7.2h3z"/><circle cx="12" cy="13" r="3.2"/></svg>';
 }
 
 export function todayLabel(date = new Date()) {

@@ -1994,7 +1994,7 @@ if (typeof window !== 'undefined') {
   });
   if ('serviceWorker' in navigator) {
     const registerShell = () => {
-      navigator.serviceWorker.register('./sw.js?v=19', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('./sw.js?v=20', { scope: './' }).catch(() => {});
     };
     if (document.readyState === 'complete') registerShell();
     else window.addEventListener('load', registerShell);
