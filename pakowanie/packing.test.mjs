@@ -6,7 +6,8 @@ const source = fs.readFileSync(new URL('./app.js', import.meta.url), 'utf8')
   .replace(
     /^import \{ createClient \} from 'https:\/\/cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\.45\.4\/\+esm';/m,
     'const createClient = () => ({ auth: { onAuthStateChange() {} }, channel() { return { on() { return this; }, subscribe() {} }; }, removeAllChannels() {} });',
-  );
+  )
+  .replace(/^import \{[\s\S]*?\} from '\.\/photos\.js';\n/m, '');
 const mod = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 test('flush keeps ticks queued during an in-flight resend', () => {
